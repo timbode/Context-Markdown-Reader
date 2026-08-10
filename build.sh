@@ -1,18 +1,18 @@
 #!/bin/bash
-# Builds Quire.app. Needs only the Command Line Tools (swiftc) and Node for the
+# Builds Context.app. Needs only the Command Line Tools (swiftc) and Node for the
 # one-off asset bundle — no Xcode.
 set -euo pipefail
 
 cd "$(dirname "$0")"
 ROOT="$PWD"
-APP="$ROOT/build/Quire.app"
+APP="$ROOT/build/Context.app"
 CONTENTS="$APP/Contents"
 RES="$CONTENTS/Resources"
 WEB="$RES/app"
 
 VERSION="0.1.0"
 BUILD_NUMBER="1"
-BUNDLE_ID="com.timbode.quire"
+BUNDLE_ID="com.timbode.context"
 MIN_MACOS="14.0"
 
 ESBUILD="$ROOT/node_modules/.bin/esbuild"
@@ -40,9 +40,14 @@ cp "$KATEX/katex.min.css" "$WEB/katex/"
 cp "$KATEX"/fonts/*.woff2 "$WEB/katex/fonts/"
 
 echo "==> Compiling Swift"
+# -module-name matters here: swiftc otherwise names the module after the output
+# binary, and a module called "Context" shadows the `Context` typealias that
+# NSViewRepresentable gives every makeNSView(context:). Any module name that
+# isn't also a type in this target will do.
 swiftc -O -parse-as-library \
+  -module-name ContextReader \
   -target "arm64-apple-macos$MIN_MACOS" \
-  -o "$CONTENTS/MacOS/Quire" \
+  -o "$CONTENTS/MacOS/Context" \
   "$ROOT"/Sources/*.swift
 
 echo "==> Writing Info.plist"
@@ -51,9 +56,9 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Quire</string>
-  <key>CFBundleDisplayName</key><string>Quire</string>
-  <key>CFBundleExecutable</key><string>Quire</string>
+  <key>CFBundleName</key><string>Context</string>
+  <key>CFBundleDisplayName</key><string>Context</string>
+  <key>CFBundleExecutable</key><string>Context</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
@@ -69,7 +74,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <dict>
       <key>CFBundleTypeName</key><string>Markdown Document</string>
       <key>CFBundleTypeRole</key><string>Editor</string>
-      <!-- Alternate, not Default: Quire offers itself in "Open With" without
+      <!-- Alternate, not Default: Context offers itself in "Open With" without
            quietly taking over every .md on the machine. -->
       <key>LSHandlerRank</key><string>Alternate</string>
       <key>LSItemContentTypes</key>

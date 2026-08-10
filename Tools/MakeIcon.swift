@@ -3,7 +3,7 @@
 // Without Xcode there is no asset catalog to drop PNGs into, so the icon is
 // drawn with Core Graphics at each required size and handed to iconutil.
 //
-// The mark is a New York "Q": the app's own reading face, so the icon states
+// The mark is a New York "C": the app's own reading face, so the icon states
 // what the app is for rather than showing yet another generic page-and-fold.
 //
 //   makeicon <output.iconset directory>
@@ -72,16 +72,19 @@ func drawIcon(pixels: Int) -> NSBitmapImageRep {
         font = NSFont(name: "Georgia", size: pointSize) ?? serif
     }
 
-    let glyph = NSAttributedString(string: "Q", attributes: [
+    let glyph = NSAttributedString(string: "C", attributes: [
         .font: font,
         .foregroundColor: paper,
     ])
     let glyphSize = glyph.size()
-    // Optical rather than metric centring: the Q's tail hangs below the
-    // baseline, so metric centring makes it sit visibly low.
+    // Centre on the cap-height box, not the line box. The line box reserves
+    // descender space the "C" never uses, so centring that would seat the
+    // letter visibly high. draw(at:) takes the line box's lower-left in an
+    // unflipped context, and the baseline sits |descender| above it.
+    let baselineY = tile.midY - font.capHeight / 2
     let origin = CGPoint(
         x: tile.midX - glyphSize.width / 2,
-        y: tile.midY - glyphSize.height / 2 + tile.height * 0.035
+        y: baselineY - abs(font.descender)
     )
     glyph.draw(at: origin)
 

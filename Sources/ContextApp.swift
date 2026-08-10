@@ -3,20 +3,20 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 @main
-struct QuireApp: App {
+struct ContextApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @ObservedObject private var doc = Document.shared
     @AppStorage(Prefs.editorVisible) private var editorVisible = false
     @AppStorage(Prefs.zoom) private var zoom: Double = 1.0
 
     var body: some Scene {
-        Window("Quire", id: "main") {
+        Window("Context", id: "main") {
             ContentView()
                 .frame(minWidth: 460, minHeight: 340)
         }
         .defaultSize(width: 940, height: 800)
         .commands {
-            // Quire opens one file at a time; a "New" item would promise a
+            // Context opens one file at a time; a "New" item would promise a
             // document model it doesn't have.
             CommandGroup(replacing: .newItem) {
                 Button("Open…") { Self.openFile() }
@@ -81,7 +81,7 @@ struct QuireApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    /// Finder double-clicks and `open -a Quire file.md` arrive here.
+    /// Finder double-clicks and `open -a Context file.md` arrive here.
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let url = urls.first(where: \.isFileURL) else { return }
         MainActor.assumeIsolated { Document.shared.open(url) }

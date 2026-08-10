@@ -20,6 +20,18 @@ Consequences:
   enforced. That's why `MainActor.assumeIsolated` appears in delegate
   callbacks rather than a full actor-isolation refactor.
 
+## `-module-name` is load-bearing
+
+`build.sh` passes `-module-name ContextReader`. Do not drop it and do not change
+it to `Context`. Without it, swiftc names the module after the output binary —
+`Context` — and a module of that name shadows the `Context` typealias that
+`NSViewRepresentable` hands to every `makeNSView(context:)` / `updateNSView`.
+The whole target then fails with "cannot use module 'Context' as a type".
+
+The trap when checking this: compiling with `-o /dev/null` derives a *different*
+module name and succeeds, so a quick syntax check will not reproduce it. Test
+with the real output path, or just run `./build.sh`.
+
 ## Screen Recording permission is not granted to the shell
 
 `screencapture` fails for windows, regions *and* full screen — "could not
@@ -32,7 +44,7 @@ and writes PNGs. No permission needed, because the app is capturing itself.
 
 ```sh
 swiftc -O -o build/tools/snapshot Tools/Snapshot.swift
-./build/tools/snapshot build/Quire.app/Contents/Resources/app Sample.md build/light.png 940 light 860
+./build/tools/snapshot build/Context.app/Contents/Resources/app Sample.md build/light.png 940 light 860
 ```
 
 Last arg is a slice height — tall documents come out as `light-00.png`,
@@ -73,20 +85,20 @@ gone, because most editors save atomically (write temp, rename over), which
 kills a plain vnode source. Verify a change to it with:
 
 ```sh
-lsof -p $(pgrep -x Quire) | grep Sample.md   # NODE column
+lsof -p $(pgrep -x Context) | grep Sample.md   # NODE column
 stat -f %i Sample.md                          # must match
 ```
 
 Mismatch means the watcher is holding a descriptor on the old unlinked inode
 and external reloads have silently stopped working.
 
-`Document.isSavingOurselves` suppresses the event from Quire's own writes.
+`Document.isSavingOurselves` suppresses the event from Context's own writes.
 Disk changes never clobber unsaved edits — the reload is skipped and a status
 message says so.
 
 ## Deliberate choices, not oversights
 
-- `LSHandlerRank` is `Alternate`, so Quire does not take over `.md` system-wide.
+- `LSHandlerRank` is `Alternate`, so Context does not take over `.md` system-wide.
 - Only KaTeX's `.woff2` fonts ship; `.woff`/`.ttf` are listed later in its
   `@font-face` stacks and WebKit never asks for them. Saves ~3.8 MB.
 - Markdown is passed to JS base64-encoded so no escaping games are needed

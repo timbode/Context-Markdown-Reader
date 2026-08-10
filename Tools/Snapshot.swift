@@ -1,4 +1,4 @@
-// Development tool — not part of Quire.app.
+// Development tool — not part of Context.app.
 //
 // Renders a Markdown file through the app's own web assets and writes a PNG,
 // so the typography can be reviewed without Screen Recording permission.
@@ -65,7 +65,7 @@ final class Snapshotter: NSObject, WKNavigationDelegate {
         // whatever appearance the machine happens to be in.
         let script = """
         document.documentElement.dataset.theme = '\(theme)';
-        window.Quire.renderBase64('\(encoded)');
+        window.Context.renderBase64('\(encoded)');
         document.documentElement.scrollHeight;
         """
         webView.evaluateJavaScript(script) { result, _ in

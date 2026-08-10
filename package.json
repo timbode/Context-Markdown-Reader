@@ -9,5 +9,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.28.2"
-  }
+  },
+  "name": "context-app",
+  "private": true
 }

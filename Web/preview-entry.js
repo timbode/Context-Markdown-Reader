@@ -1,5 +1,5 @@
 // Bundled into Resources/app/preview.js by build.sh (esbuild, IIFE).
-// Exposes window.Quire for the Swift side to drive.
+// Exposes window.Context for the Swift side to drive.
 
 import MarkdownIt from 'markdown-it'
 import footnote from 'markdown-it-footnote'
@@ -120,7 +120,7 @@ function localizeURLs(root) {
     if (!path) return
     const host = path.startsWith('/') ? 'abs' : 'doc'
     const clean = path.replace(/^\.\//, '').replace(/^\//, '')
-    el.setAttribute(attr, `quire-doc://${host}/` + encodeURI(clean) + (hash ? '#' + hash : ''))
+    el.setAttribute(attr, `context-doc://${host}/` + encodeURI(clean) + (hash ? '#' + hash : ''))
   }
   for (const img of root.querySelectorAll('img[src]')) rewrite(img, 'src')
   for (const a of root.querySelectorAll('a[href]')) rewrite(a, 'href')
@@ -135,7 +135,7 @@ function decodeBase64Utf8(b64) {
   return new TextDecoder('utf-8').decode(bytes)
 }
 
-window.Quire = {
+window.Context = {
   // Swift base64-encodes the source so no escaping games are needed to get it
   // across the JS bridge.
   renderBase64(b64) {

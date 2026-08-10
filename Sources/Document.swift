@@ -2,7 +2,7 @@ import AppKit
 import Combine
 import Foundation
 
-/// The open Markdown file. Quire is a single-window reader, so one instance is
+/// The open Markdown file. Context is a single-window reader, so one instance is
 /// shared by the app delegate, the menu commands and both panes.
 @MainActor
 final class Document: ObservableObject {
@@ -23,7 +23,7 @@ final class Document: ObservableObject {
     /// somebody else editing the file.
     private var isSavingOurselves = false
 
-    var displayName: String { url?.lastPathComponent ?? "Quire" }
+    var displayName: String { url?.lastPathComponent ?? "Context" }
     var directory: URL? { url?.deletingLastPathComponent() }
 
     private init() {

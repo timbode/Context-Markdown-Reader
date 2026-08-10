@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 import WebKit
 
 /// The reading pane: a WKWebView showing `Resources/app/index.html`, driven by
-/// `window.Quire.renderBase64`.
+/// `window.Context.renderBase64`.
 struct PreviewView: NSViewRepresentable {
     @ObservedObject var doc: Document
     var zoom: Double
@@ -35,7 +35,7 @@ struct PreviewView: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKURLSchemeHandler {
-        static let scheme = "quire-doc"
+        static let scheme = "context-doc"
 
         private var isLoaded = false
         private var pending: String?
@@ -55,7 +55,7 @@ struct PreviewView: NSViewRepresentable {
 
         private func push(_ source: String, to webView: WKWebView) {
             let encoded = Data(source.utf8).base64EncodedString()
-            webView.evaluateJavaScript("window.Quire.renderBase64('\(encoded)')")
+            webView.evaluateJavaScript("window.Context.renderBase64('\(encoded)')")
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -81,7 +81,7 @@ struct PreviewView: NSViewRepresentable {
 
             switch url.scheme {
             case Self.scheme:
-                // A relative link in the document. Markdown opens in Quire;
+                // A relative link in the document. Markdown opens in Context;
                 // anything else goes to whichever app owns it.
                 if let resolved = Self.resolve(url) {
                     if Self.markdownExtensions.contains(resolved.pathExtension.lowercased()) {
@@ -108,8 +108,8 @@ struct PreviewView: NSViewRepresentable {
 
         // MARK: Local resources
 
-        /// `quire-doc://doc/<relative>` resolves against the open document's
-        /// folder; `quire-doc://abs/<path>` is an absolute filesystem path.
+        /// `context-doc://doc/<relative>` resolves against the open document's
+        /// folder; `context-doc://abs/<path>` is an absolute filesystem path.
         static func resolve(_ url: URL) -> URL? {
             let path = (url.path.removingPercentEncoding ?? url.path)
                 .trimmingCharacters(in: CharacterSet(charactersIn: "/"))

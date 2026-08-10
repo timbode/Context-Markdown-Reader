@@ -1,6 +1,6 @@
 # A Reader for Markdown
 
-Quire renders a document the way a book would set it: one column, a fixed
+Context renders a document the way a book would set it: one column, a fixed
 measure, and type that stays out of the way. The editor is a guest — press
 `⌘E` when you need it, dismiss it when you don't.
 
@@ -98,7 +98,7 @@ own subtle background without shouting.
 ---
 
 Links behave normally — [CommonMark](https://commonmark.org) opens in your
-browser, while a relative link stays inside Quire.
+browser, while a relative link stays inside Context.
 
 [^measure]: Bringhurst puts the ideal at 66 characters, "counting both letters
 and spaces", and calls anything from 45 to 75 satisfactory.
