@@ -1,0 +1,383 @@
+/* Quire — reading stylesheet.
+   Type comes entirely from the system: New York for prose, SF Pro for chrome,
+   SF Mono for code. Nothing is downloaded or bundled except KaTeX's glyphs. */
+
+:root {
+  --font-body: ui-serif, "New York", Georgia, serif;
+  --font-ui: ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  --measure: 38rem;
+  --pad-x: 1.75rem;
+  --pad-y: 4.5rem;
+
+  /* Warm paper, ink that stops short of pure black. */
+  --bg: #faf9f7;
+  --fg: #24221f;
+  --muted: #6b665f;
+  --faint: #948d84;
+  --rule: #e4e0d8;
+  --accent: #2c5d87;
+  --surface: #f1eee8;
+  --surface-edge: #e7e2d9;
+  --mark: #f6e6a8;
+  --select: #d5e3f0;
+
+  --tok-comment: #8c877e;
+  --tok-keyword: #8a4b9c;
+  --tok-string: #5b7a3c;
+  --tok-number: #9a6534;
+  --tok-title: #2c5d87;
+  --tok-type: #2b7272;
+  --tok-attr: #a04a3a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    /* Soft warm charcoal rather than black; text warm off-white. */
+    --bg: #1b1a19;
+    --fg: #ddd8d0;
+    --muted: #918b83;
+    --faint: #6e6862;
+    --rule: #33312e;
+    --accent: #8ab4dd;
+    --surface: #262422;
+    --surface-edge: #302d2b;
+    --mark: #5c5024;
+    --select: #2f3f52;
+
+    --tok-comment: #7d786f;
+    --tok-keyword: #c39ad6;
+    --tok-string: #a4c47a;
+    --tok-number: #d4a06a;
+    --tok-title: #8ab4dd;
+    --tok-type: #6dbdbd;
+    --tok-attr: #dd9484;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #1b1a19;
+  --fg: #ddd8d0;
+  --muted: #918b83;
+  --faint: #6e6862;
+  --rule: #33312e;
+  --accent: #8ab4dd;
+  --surface: #262422;
+  --surface-edge: #302d2b;
+  --mark: #5c5024;
+  --select: #2f3f52;
+
+  --tok-comment: #7d786f;
+  --tok-keyword: #c39ad6;
+  --tok-string: #a4c47a;
+  --tok-number: #d4a06a;
+  --tok-title: #8ab4dd;
+  --tok-type: #6dbdbd;
+  --tok-attr: #dd9484;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 1.125rem;
+  line-height: 1.65;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection { background: var(--select); }
+
+/* ── Reading measure ─────────────────────────────────────────────────────
+   Prose sits in the centre `text` track. Code blocks, tables and display
+   maths get the wider `wide` track so they breathe without dragging the
+   line length of the prose out with them. */
+
+#doc {
+  display: grid;
+  grid-template-columns:
+    [full-start] minmax(var(--pad-x), 1fr)
+    [wide-start] minmax(0, 3.5rem)
+    [text-start] min(var(--measure), 100%) [text-end]
+    minmax(0, 3.5rem) [wide-end]
+    minmax(var(--pad-x), 1fr) [full-end];
+  padding: var(--pad-y) 0 8rem;
+}
+
+#doc > * { grid-column: text; }
+#doc > pre,
+#doc > .table-scroll,
+/* Display maths is a <section> — but so is the footnote block, which is
+   prose and belongs on the prose measure. */
+#doc > section:not(.footnotes) { grid-column: wide; }
+
+body.empty #doc { display: none; }
+
+/* ── Prose ───────────────────────────────────────────────────────────── */
+
+p, ul, ol, blockquote, dl, pre, table, section, hr, figure {
+  margin: 0 0 1.15em;
+}
+
+p {
+  text-wrap: pretty;
+  hyphens: auto;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-ui);
+  font-weight: 640;
+  line-height: 1.22;
+  letter-spacing: -0.021em;
+  text-wrap: balance;
+  hyphens: none;
+  margin: 2.4em 0 0.62em;
+}
+
+#doc > :first-child { margin-top: 0; }
+
+h1 { font-size: 2.05em; letter-spacing: -0.028em; margin-top: 0; }
+h2 { font-size: 1.5em; }
+h3 { font-size: 1.2em; }
+h4 { font-size: 1.02em; }
+h5, h6 { font-size: 0.92em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 620; }
+
+h1 + p, h2 + p, h3 + p { margin-top: 0; }
+
+a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 0.5px;
+  text-underline-offset: 0.18em;
+  text-decoration-color: color-mix(in srgb, var(--accent) 42%, transparent);
+}
+a:hover { text-decoration-color: var(--accent); }
+
+strong { font-weight: 660; }
+em { font-style: italic; }
+mark { background: var(--mark); color: inherit; padding: 0.05em 0.15em; border-radius: 2px; }
+del { color: var(--muted); }
+small { font-size: 0.86em; color: var(--muted); }
+
+ul, ol { padding-left: 1.35em; }
+li { margin: 0.28em 0; }
+li > ul, li > ol { margin: 0.28em 0; }
+
+blockquote {
+  padding-left: 1.15em;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 38%, var(--rule));
+  color: var(--muted);
+}
+blockquote > :last-child { margin-bottom: 0; }
+
+hr {
+  border: 0;
+  height: 1px;
+  background: var(--rule);
+  margin: 2.6em 0;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  display: block;
+}
+
+kbd {
+  font-family: var(--font-ui);
+  font-size: 0.82em;
+  padding: 0.12em 0.42em;
+  border: 1px solid var(--surface-edge);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+/* ── Code ────────────────────────────────────────────────────────────── */
+
+code, pre, kbd, samp {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+}
+
+:not(pre) > code {
+  font-size: 0.855em;
+  background: var(--surface);
+  padding: 0.14em 0.36em;
+  border-radius: 4px;
+  overflow-wrap: break-word;
+}
+
+pre {
+  background: var(--surface);
+  border-radius: 7px;
+  padding: 0.95rem 1.15rem;
+  overflow-x: auto;
+  font-size: 0.855em;
+  line-height: 1.5;
+  -webkit-overflow-scrolling: touch;
+}
+pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* Syntax: low-saturation and deliberately narrow — enough to read structure,
+   not a colour wheel. */
+.hljs-comment, .hljs-quote { color: var(--tok-comment); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-doctag, .hljs-formula { color: var(--tok-keyword); }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-meta-string { color: var(--tok-string); }
+.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-link { color: var(--tok-number); }
+.hljs-title, .hljs-title.function_, .hljs-section, .hljs-name { color: var(--tok-title); }
+.hljs-type, .hljs-title.class_, .hljs-built_in, .hljs-class .hljs-title { color: var(--tok-type); }
+.hljs-attr, .hljs-attribute, .hljs-variable, .hljs-template-variable, .hljs-selector-attr { color: var(--tok-attr); }
+.hljs-params { color: inherit; }
+.hljs-meta { color: var(--muted); }
+.hljs-deletion { color: var(--tok-attr); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
+
+/* ── Tables ──────────────────────────────────────────────────────────── */
+
+.table-scroll {
+  overflow-x: auto;
+  margin: 0 0 1.4em;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--font-ui);
+  font-size: 0.9em;
+  line-height: 1.5;
+  margin: 0;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.5em 0.95em 0.5em 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+th:last-child, td:last-child { padding-right: 0; }
+
+thead th {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 0.88em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 35%, var(--rule));
+  white-space: nowrap;
+}
+
+tbody tr:last-child td { border-bottom: 0; }
+
+/* ── Task lists ──────────────────────────────────────────────────────── */
+
+ul.contains-task-list { list-style: none; padding-left: 0.15em; }
+/* The plugin wraps the box and the text together in a <label>, so that — not
+   the <li> — is the flex container that spaces them. */
+.task-list-item { display: block; }
+.task-list-item > label { display: flex; align-items: baseline; gap: 0.6em; }
+.task-list-item-checkbox {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 0.92em;
+  height: 0.92em;
+  margin: 0;
+  border: 1.5px solid var(--faint);
+  border-radius: 3.5px;
+  position: relative;
+  top: 0.12em;
+}
+.task-list-item-checkbox:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.task-list-item-checkbox:checked::after {
+  content: "";
+  position: absolute;
+  left: 0.26em; top: 0.08em;
+  width: 0.2em; height: 0.44em;
+  border: solid var(--bg);
+  border-width: 0 1.7px 1.7px 0;
+  transform: rotate(43deg);
+}
+.task-list-item-checkbox:checked ~ .task-list-item-label,
+.task-list-item-checkbox:checked + label { color: var(--muted); }
+
+/* ── Maths ───────────────────────────────────────────────────────────── */
+
+/* texmath emits <eq> inline and <section><eqn> for display. */
+section:has(> eqn) {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.35em 0;
+  margin: 1.5em 0;
+}
+eqn { display: block; }
+eqn .katex-display { margin: 0; }
+eq .katex { font-size: 1.03em; }
+
+/* ── Footnotes ───────────────────────────────────────────────────────── */
+
+/* The plugin emits its own separator rule as a *sibling* of the section; the
+   section's own border-top is the one we keep. */
+hr.footnotes-sep { display: none; }
+
+.footnotes {
+  margin-top: 3em;
+  padding-top: 1.4em;
+  border-top: 1px solid var(--rule);
+  font-size: 0.92em;
+  color: var(--muted);
+}
+.footnotes ol { padding-left: 1.2em; }
+.footnote-backref { text-decoration: none; margin-left: 0.3em; }
+sup.footnote-ref a {
+  text-decoration: none;
+  font-family: var(--font-ui);
+  font-size: 0.82em;
+  padding: 0 0.1em;
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────── */
+
+#placeholder {
+  display: none;
+  position: fixed;
+  inset: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  font-family: var(--font-ui);
+  color: var(--faint);
+  user-select: none;
+  -webkit-user-select: none;
+}
+body.empty #placeholder { display: flex; }
+#placeholder p { margin: 0; font-size: 1rem; }
+#placeholder .hint { font-size: 0.83rem; opacity: 0.75; }
+
+/* ── Narrow windows ──────────────────────────────────────────────────── */
+
+@media (max-width: 620px) {
+  :root { --pad-y: 2.75rem; }
+  body { font-size: 1.06rem; }
+  h1 { font-size: 1.8em; }
+  h2 { font-size: 1.38em; }
+}
