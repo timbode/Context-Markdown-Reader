@@ -180,12 +180,21 @@ blockquote {
 }
 blockquote > :last-child { margin-bottom: 0; }
 
+/* A rule owns the whole gap on both sides, and its neighbours contribute
+   nothing. `#doc` is a grid, so adjacent margins never collapse — letting the
+   neighbours add their own would make the gap the *sum* of both, which lands
+   the rule badly off-centre (a following h2 brings 2.4em of heading lead, the
+   paragraph above only 1.15em) as well as roughly doubling it.
+   `.footnotes-sep` is exempt: it is display:none and the footnote block sets
+   its own lead. */
 hr {
   border: 0;
   height: 1px;
   background: var(--rule);
-  margin: 2.6em 0;
+  margin: 2.4em 0;
 }
+#doc > *:has(+ hr:not(.footnotes-sep)) { margin-bottom: 0; }
+#doc > hr:not(.footnotes-sep) + * { margin-top: 0; }
 
 img {
   max-width: 100%;

@@ -22,6 +22,11 @@ let paper = NSColor(srgbRed: 0.980, green: 0.976, blue: 0.968, alpha: 1)
 let inkTop = NSColor(srgbRed: 0.200, green: 0.188, blue: 0.169, alpha: 1)
 let inkBottom = NSColor(srgbRed: 0.098, green: 0.090, blue: 0.082, alpha: 1)
 
+/// Renders one square icon variant.
+///
+/// - Parameter pixels: Side length in pixels; every proportion below is derived
+///   from it, so all ten `.iconset` sizes are the same drawing.
+/// - Returns: A bitmap ready to be encoded as PNG.
 func drawIcon(pixels: Int) -> NSBitmapImageRep {
     let rep = NSBitmapImageRep(
         bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels,
@@ -76,15 +81,29 @@ func drawIcon(pixels: Int) -> NSBitmapImageRep {
         .font: font,
         .foregroundColor: paper,
     ])
-    let glyphSize = glyph.size()
-    // Centre on the cap-height box, not the line box. The line box reserves
-    // descender space the "C" never uses, so centring that would seat the
-    // letter visibly high. draw(at:) takes the line box's lower-left in an
-    // unflipped context, and the baseline sits |descender| above it.
-    let baselineY = tile.midY - font.capHeight / 2
+
+    // Centre the *ink*, not the advance box and not the line box. Both of those
+    // are typesetting boxes that reserve space this glyph never fills: the line
+    // box carries descender depth a "C" has no use for, and New York's "C" has
+    // a left side bearing nearly twice its right (4.64 vs 2.70 at 100pt), so
+    // centring the advance seats the letter ~1% of the tile right of centre —
+    // small, but plainly visible once you look for it.
+    var character: UniChar = UInt16(UnicodeScalar("C").value)
+    var glyphID: CGGlyph = 0
+    CTFontGetGlyphsForCharacters(font, &character, &glyphID, 1)
+    let ink = CTFontGetBoundingRectsForGlyphs(font, .horizontal, &glyphID, nil, 1)
+
+    // A "C" opens to the right, so its visual mass sits left of its ink box and
+    // a geometrically centred one still reads a touch right. This nudge is the
+    // eye's correction, kept separate from the geometry above so each can be
+    // judged on its own.
+    let opticalShiftX = -tile.width * 0.006
+
+    // draw(at:) positions the line box's lower-left, and the pen sits |descender|
+    // above that; the ink box is measured from the pen.
     let origin = CGPoint(
-        x: tile.midX - glyphSize.width / 2,
-        y: baselineY - abs(font.descender)
+        x: tile.midX - ink.midX + opticalShiftX,
+        y: tile.midY - ink.midY - abs(font.descender)
     )
     glyph.draw(at: origin)
 

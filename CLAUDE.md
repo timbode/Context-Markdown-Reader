@@ -69,6 +69,21 @@ to the terminal in System Settings → Privacy & Security first.
   inside a single `<label>`, so the `<li>` has one flex child and `gap` on the
   `<li>` does nothing. The `<label>` is the flex container.
 
+## Margins never collapse inside `#doc`
+
+`#doc` is a grid, and grid items' margins do not collapse. Every vertical gap
+in the document is therefore the **sum** of both neighbours' margins, not the
+larger of the two — the opposite of normal flow, and the reason horizontal
+rules once sat 71px below a paragraph and 117px above the next heading.
+
+So when spacing anything in `style.css`, ask what the *other* side contributes.
+Where an element needs a predictable gap, have it own both sides and zero its
+neighbours' (`hr` does this via `:has(+ hr)` / `hr + *`) rather than tuning two
+numbers against each other.
+
+Measure rather than eyeball: render with `Tools/Snapshot.swift` and scan the PNG
+for rows containing ink; the gaps between those bands are the real numbers.
+
 ## Why the panes never branch on `editorVisible`
 
 `ContentView` keeps both panes in the tree always and collapses the editor to
