@@ -36,6 +36,8 @@ import typescript from 'highlight.js/lib/languages/typescript'
 import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
 
+// Registered explicitly rather than pulling highlight.js's "common" bundle:
+// this list is the one that ships, and it costs about a tenth of the full set.
 for (const [name, lang] of Object.entries({
   bash, c, cpp, css, diff, dockerfile, go, ini, java, javascript, json, julia,
   latex, lua, makefile, markdown, python, r, ruby, rust, scss, shell, sql,
@@ -44,6 +46,7 @@ for (const [name, lang] of Object.entries({
   hljs.registerLanguage(name, lang)
 }
 
+/** Fence labels people actually type, mapped to registered language names. */
 const ALIASES = {
   jl: 'julia', py: 'python', js: 'javascript', ts: 'typescript', rb: 'ruby',
   rs: 'rust', sh: 'bash', zsh: 'bash', console: 'shell', yml: 'yaml',
@@ -56,6 +59,15 @@ const md = new MarkdownIt({
   linkify: true,
   typographer: true,
   breaks: false,
+  /**
+   * Highlights a fenced code block.
+   *
+   * @param {string} str - The block's raw contents.
+   * @param {string} lang - The fence's language label, possibly empty.
+   * @returns {string} Highlighted HTML, or '' to let markdown-it escape the
+   *   block itself — which is also the fallback for an unknown language or a
+   *   highlighter that throws.
+   */
   highlight(str, lang) {
     const name = ALIASES[(lang || '').toLowerCase()] || (lang || '').toLowerCase()
     if (name && hljs.getLanguage(name)) {
@@ -81,8 +93,14 @@ md.use(texmath, {
   },
 })
 
-// Tables can exceed the reading measure; the stylesheet gives the wrapper its
-// own scroll context so the page itself never scrolls sideways.
+/**
+ * Wraps top-level tables in their own scroll container.
+ *
+ * Tables can exceed the reading measure; the stylesheet gives the wrapper its
+ * own scroll context so the page itself never scrolls sideways.
+ *
+ * @param {HTMLElement} root - The rendered document. Mutated in place.
+ */
 function wrapTables(root) {
   for (const table of root.querySelectorAll(':scope > table')) {
     const wrap = document.createElement('div')
@@ -92,8 +110,14 @@ function wrapTables(root) {
   }
 }
 
-// Stable ids so in-document links and future outline work have something to
-// aim at. Duplicate headings get a numeric suffix.
+/**
+ * Gives every heading a slug id.
+ *
+ * Stable ids so in-document links and future outline work have something to
+ * aim at. Duplicate headings get a numeric suffix.
+ *
+ * @param {HTMLElement} root - The rendered document. Mutated in place.
+ */
 function addHeadingIds(root) {
   const seen = new Map()
   for (const h of root.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
@@ -107,27 +131,55 @@ function addHeadingIds(root) {
   }
 }
 
-// Relative images and links are resolved by the Swift side against the
-// document's own directory, via a custom scheme. Without this the webview —
-// which is loaded out of the app bundle — has no way to reach them.
+/** Matches anything already resolvable: a scheme, a protocol-relative host, or
+ *  a bare fragment. */
 const ABSOLUTE = /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i
 
-function localizeURLs(root) {
-  const rewrite = (el, attr) => {
-    const raw = el.getAttribute(attr)
-    if (!raw || ABSOLUTE.test(raw)) return
-    const [path, hash] = raw.split('#')
-    if (!path) return
-    const host = path.startsWith('/') ? 'abs' : 'doc'
-    const clean = path.replace(/^\.\//, '').replace(/^\//, '')
-    el.setAttribute(attr, `context-doc://${host}/` + encodeURI(clean) + (hash ? '#' + hash : ''))
-  }
-  for (const img of root.querySelectorAll('img[src]')) rewrite(img, 'src')
-  for (const a of root.querySelectorAll('a[href]')) rewrite(a, 'href')
+/**
+ * Rewrites one relative URL attribute into the custom scheme.
+ *
+ * Absolute URLs and in-page fragments are left alone. A leading '/' selects the
+ * 'abs' host, anything else resolves against the document's folder.
+ *
+ * @param {Element} el - Element carrying the attribute. Mutated in place.
+ * @param {string} attr - Attribute name, 'src' or 'href'.
+ */
+function rewriteURL(el, attr) {
+  const raw = el.getAttribute(attr)
+  if (!raw || ABSOLUTE.test(raw)) return
+  const [path, hash] = raw.split('#')
+  if (!path) return
+  const host = path.startsWith('/') ? 'abs' : 'doc'
+  const clean = path.replace(/^\.\//, '').replace(/^\//, '')
+  el.setAttribute(attr, `context-doc://${host}/` + encodeURI(clean) + (hash ? '#' + hash : ''))
 }
 
+/**
+ * Points every relative image and link at the custom scheme.
+ *
+ * Relative images and links are resolved by the Swift side against the
+ * document's own directory, via that scheme. Without this the webview — which
+ * is loaded out of the app bundle — has no way to reach them.
+ *
+ * @param {HTMLElement} root - The rendered document. Mutated in place.
+ */
+function localizeURLs(root) {
+  for (const img of root.querySelectorAll('img[src]')) rewriteURL(img, 'src')
+  for (const a of root.querySelectorAll('a[href]')) rewriteURL(a, 'href')
+}
+
+/** @returns {HTMLElement} The container the rendered document lives in. */
 const doc = () => document.getElementById('doc')
 
+/**
+ * Decodes base64 to a string, via bytes.
+ *
+ * atob alone yields one char per byte, which mangles anything non-ASCII; the
+ * bytes have to be handed to a UTF-8 decoder.
+ *
+ * @param {string} b64 - Base64-encoded UTF-8.
+ * @returns {string} The decoded text.
+ */
 function decodeBase64Utf8(b64) {
   const bin = atob(b64)
   const bytes = new Uint8Array(bin.length)
@@ -135,14 +187,21 @@ function decodeBase64Utf8(b64) {
   return new TextDecoder('utf-8').decode(bytes)
 }
 
+/** The surface the Swift side drives. Nothing else is exported. */
 window.Context = {
-  // Swift base64-encodes the source so no escaping games are needed to get it
-  // across the JS bridge.
+  /**
+   * Renders Markdown into the page, replacing whatever was there.
+   *
+   * @param {string} b64 - Base64-encoded UTF-8 Markdown. Swift encodes it so no
+   *   escaping games are needed to get it across the JS bridge.
+   *
+   * Scroll position is preserved: a reload from a file-watch event should leave
+   * you where you were reading. An empty document puts the body in the `empty`
+   * state, which reveals the placeholder.
+   */
   renderBase64(b64) {
     const src = decodeBase64Utf8(b64)
 
-    // A reload from a file-watch event should leave you where you were reading,
-    // so hold the scroll offset across the swap.
     const scroll = document.documentElement.scrollTop
 
     const el = doc()
@@ -155,6 +214,7 @@ window.Context = {
     document.documentElement.scrollTop = scroll
   },
 
+  /** Scrolls the document back to the top, animated. */
   scrollToTop() {
     document.documentElement.scrollTo({ top: 0, behavior: 'smooth' })
   },

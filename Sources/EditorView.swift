@@ -4,11 +4,20 @@ import SwiftUI
 /// The editing pane: a plain NSTextView over the Markdown source. Deliberately
 /// unstyled beyond type and colour — this is the pane you summon to fix a typo,
 /// not the one you live in.
+///
+/// Text flows both ways: edits here reach the document through the coordinator,
+/// and external reloads come back through `updateNSView`.
 struct EditorView: NSViewRepresentable {
     @ObservedObject var doc: Document
 
+    /// - Returns: The text view's delegate, which forwards edits to the document.
     func makeCoordinator() -> Coordinator { Coordinator(doc: doc) }
 
+    /// Builds the scrolling text view and seeds it with the current text.
+    ///
+    /// - Returns: The scroll view; its `documentView` is the text view. If
+    ///   AppKit hands back something else, the scroll view is returned
+    ///   unconfigured rather than trapping.
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
         scrollView.hasVerticalScroller = true
@@ -54,6 +63,10 @@ struct EditorView: NSViewRepresentable {
         return scrollView
     }
 
+    /// Adopts text that changed outside the editor, preserving the caret.
+    ///
+    /// Replacing `string` collapses the selection, so the caret is restored and
+    /// clamped — the new text may well be shorter than where the caret was.
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? NSTextView else { return }
         context.coordinator.doc = doc
@@ -67,11 +80,17 @@ struct EditorView: NSViewRepresentable {
         textView.setSelectedRange(NSRange(location: caret, length: 0))
     }
 
+    /// Text view delegate: the one-way path from typing to the document.
     final class Coordinator: NSObject, NSTextViewDelegate {
+        /// Re-assigned on each update, so the delegate never holds a stale
+        /// document.
         var doc: Document
 
+        /// - Parameter doc: The document edits are reported to.
         init(doc: Document) { self.doc = doc }
 
+        /// Forwards the full text on every keystroke; the document debounces and
+        /// ignores no-ops.
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             MainActor.assumeIsolated { doc.edit(textView.string) }

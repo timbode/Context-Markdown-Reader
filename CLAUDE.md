@@ -2,12 +2,12 @@
 
 Things that are not obvious from the code, and that cost time to work out.
 
-## No Xcode on this machine — only Command Line Tools
+## The build assumes Command Line Tools only — no Xcode
 
-`xcodebuild` does not exist here; `swiftc` does, and the CLT ships the full
-macOS SDK including SwiftUI, AppKit and WebKit. So the whole build is
-`swiftc` + a hand-assembled bundle in `build.sh`. Don't reach for an
-`.xcodeproj` or a `Package.swift` app target — nothing would run it.
+`xcodebuild` is not available; `swiftc` is, and the CLT ships the full macOS SDK
+including SwiftUI, AppKit and WebKit. So the whole build is `swiftc` + a
+hand-assembled bundle in `build.sh`. Don't reach for an `.xcodeproj` or a
+`Package.swift` app target — nothing here would run it.
 
 Consequences:
 - The app icon can't come from an asset catalog (`actool` is Xcode-only).
@@ -32,11 +32,11 @@ The trap when checking this: compiling with `-o /dev/null` derives a *different*
 module name and succeeds, so a quick syntax check will not reproduce it. Test
 with the real output path, or just run `./build.sh`.
 
-## Screen Recording permission is not granted to the shell
+## Screenshots need Screen Recording permission — the snapshot tool does not
 
-`screencapture` fails for windows, regions *and* full screen — "could not
-create image from …". So the native chrome (title bar, editor pane, split)
-cannot be screenshotted from a session.
+Without it `screencapture` fails for windows, regions *and* full screen ("could
+not create image from …"), so the native chrome (title bar, editor pane, split)
+cannot be captured from a terminal session at all.
 
 `Tools/Snapshot.swift` works around this for the part that matters: it loads
 the app's own web assets into an offscreen WKWebView, renders a Markdown file,
@@ -114,6 +114,9 @@ message says so.
 ## Deliberate choices, not oversights
 
 - `LSHandlerRank` is `Alternate`, so Context does not take over `.md` system-wide.
+- The Swift target is `arm64` only, not universal. Nothing depends on that
+  beyond the machine it was written on; widening it is a one-line change to
+  `-target` in `build.sh` (or two builds and `lipo`).
 - Only KaTeX's `.woff2` fonts ship; `.woff`/`.ttf` are listed later in its
   `@font-face` stacks and WebKit never asks for them. Saves ~3.8 MB.
 - Markdown is passed to JS base64-encoded so no escaping games are needed

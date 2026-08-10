@@ -4,8 +4,21 @@ import Foundation
 
 /// The open Markdown file. Context is a single-window reader, so one instance is
 /// shared by the app delegate, the menu commands and both panes.
+///
+/// The type owns three things that have to stay consistent: the text, the URL it
+/// came from, and a watch on that URL. Every transition between them goes
+/// through this class — nothing else opens, saves or reloads a file.
+///
+/// Invariants:
+/// - `isDirty` is true only when `url != nil` and `text` differs from disk.
+/// - `renderSource` trails `text` by the debounce interval, except on open,
+///   where both are set together so the first paint is immediate.
+/// - A disk change never overwrites unsaved edits.
 @MainActor
 final class Document: ObservableObject {
+    /// The process-wide document. Not lazy-initialised state to be passed
+    /// around: the menu bar and the app delegate both need it before any view
+    /// exists.
     static let shared = Document()
 
     /// Live text. The editor writes here; the preview reads `renderSource`.
@@ -14,18 +27,32 @@ final class Document: ObservableObject {
     /// `text` debounced, so typing doesn't re-render on every keystroke.
     @Published private(set) var renderSource: String = ""
 
+    /// Where `text` came from, and where `save()` writes. Nil before the first
+    /// open, which is what disables the save and revert commands.
     @Published private(set) var url: URL?
+
+    /// True when `text` has edits not yet written to `url`.
     @Published private(set) var isDirty = false
+
+    /// Transient message for the status banner; nil when there is nothing to say.
     @Published private(set) var status: String?
 
     private var watcher: FileWatcher?
+
     /// Set around our own writes so the resulting fs event isn't mistaken for
     /// somebody else editing the file.
     private var isSavingOurselves = false
 
+    /// The window title: the file's name, or the app's before anything is open.
     var displayName: String { url?.lastPathComponent ?? "Context" }
+
+    /// The folder relative links and images resolve against; nil before any open.
     var directory: URL? { url?.deletingLastPathComponent() }
 
+    /// Wires `text` to `renderSource` through a debounce.
+    ///
+    /// Private: `shared` is the only instance, because a second one would mean a
+    /// second watcher on the same path.
     private init() {
         $text
             .debounce(for: .milliseconds(110), scheduler: DispatchQueue.main)
@@ -34,6 +61,15 @@ final class Document: ObservableObject {
 
     // MARK: - Opening
 
+    /// Loads `url` and makes it the open document, replacing any current one.
+    ///
+    /// Decoding is attempted as UTF-8 and then Latin-1. Failure is reported
+    /// through `status` rather than thrown: opening a file the user asked for is
+    /// not an error the caller can do anything about.
+    ///
+    /// - Parameter url: A file URL. Directories and unreadable paths set
+    ///   `status` and leave the current document untouched.
+    /// - Postcondition: On success `isDirty` is false and the file is watched.
     func open(_ url: URL) {
         do {
             let contents = try String(contentsOf: url, encoding: .utf8)
@@ -50,6 +86,14 @@ final class Document: ObservableObject {
         }
     }
 
+    /// Installs decoded contents as the current document.
+    ///
+    /// The single place where all of the open-state fields move together, so
+    /// they cannot drift apart.
+    ///
+    /// - Parameters:
+    ///   - contents: Already-decoded text.
+    ///   - url: The file it was decoded from.
     private func apply(_ contents: String, from url: URL) {
         text = contents
         renderSource = contents      // render immediately, don't wait out the debounce
@@ -60,9 +104,16 @@ final class Document: ObservableObject {
         startWatching(url)
     }
 
+    /// Dismisses the status banner.
     func clearStatus() { status = nil }
 
-    /// Editor edits arrive here so they can be distinguished from a disk load.
+    /// Records an edit made in the editor pane.
+    ///
+    /// Editor edits arrive here so they can be distinguished from a disk load:
+    /// only these mark the document dirty.
+    ///
+    /// - Parameter newText: The full new contents. Identical text is ignored, so
+    ///   the editor may call this on every keystroke.
     func edit(_ newText: String) {
         guard newText != text else { return }
         text = newText
@@ -71,6 +122,13 @@ final class Document: ObservableObject {
 
     // MARK: - Saving
 
+    /// Writes `text` back to `url`.
+    ///
+    /// The write is atomic, which replaces the inode — `isSavingOurselves`
+    /// keeps the resulting watch event from being read as an external change.
+    ///
+    /// - Returns: True on success. False if there is no URL to save to, or the
+    ///   write failed — in which case `status` carries the reason.
     @discardableResult
     func save() -> Bool {
         guard let url else { return false }
@@ -94,6 +152,9 @@ final class Document: ObservableObject {
 
     // MARK: - Watching
 
+    /// Points the watcher at `url`, replacing any previous watch.
+    ///
+    /// - Parameter url: The file to observe.
     private func startWatching(_ url: URL) {
         watcher?.stop()
         watcher = FileWatcher(url: url) { [weak self] in
@@ -102,6 +163,11 @@ final class Document: ObservableObject {
         watcher?.start()
     }
 
+    /// Reloads after an external write, if that is safe.
+    ///
+    /// Skipped entirely when the change was our own save, and refused when there
+    /// are unsaved edits — the user is told instead. This is what lets Context
+    /// serve as a live preview beside another editor.
     private func fileChangedOnDisk() {
         guard let url, !isSavingOurselves else { return }
         // Unsaved edits win — a reader shouldn't silently discard your typing.
@@ -120,6 +186,10 @@ final class Document: ObservableObject {
 /// Watches a single path for writes. Editors that save atomically replace the
 /// inode, which kills a plain vnode source — so a rename or delete re-arms the
 /// watch on the path rather than treating the file as gone.
+///
+/// The watcher observes a *path*, not a file: after any replacement it ends up
+/// holding a descriptor on whatever now lives at that path. Callbacks are
+/// delivered on the main queue.
 final class FileWatcher {
     private let url: URL
     private let onChange: () -> Void
@@ -127,6 +197,12 @@ final class FileWatcher {
     private var descriptor: CInt = -1
     private var rearm: DispatchWorkItem?
 
+    /// Prepares a watch without starting it.
+    ///
+    /// - Parameters:
+    ///   - url: File to observe.
+    ///   - onChange: Called on the main queue after each write, and once after
+    ///     each re-arm. May fire more than once per logical save.
     init(url: URL, onChange: @escaping () -> Void) {
         self.url = url
         self.onChange = onChange
@@ -134,6 +210,10 @@ final class FileWatcher {
 
     deinit { closeSource() }
 
+    /// Opens the path and begins delivering events, replacing any current watch.
+    ///
+    /// Silently does nothing if the path cannot be opened — a file that has
+    /// vanished is not an error worth surfacing to a reader.
     func start() {
         closeSource()
         descriptor = Darwin.open(url.path, O_EVTONLY)
@@ -160,6 +240,7 @@ final class FileWatcher {
         src.resume()
     }
 
+    /// Ends the watch and cancels any pending re-arm. Safe to call repeatedly.
     func stop() {
         rearm?.cancel()
         rearm = nil
@@ -167,6 +248,9 @@ final class FileWatcher {
     }
 
     /// Give the replacing write a moment to land, then re-open and report.
+    ///
+    /// Coalescing: a fresh call supersedes a pending one, so the burst of
+    /// events an atomic save produces results in a single reload.
     private func scheduleRearm() {
         rearm?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -178,6 +262,7 @@ final class FileWatcher {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
     }
 
+    /// Tears down the dispatch source and its descriptor.
     private func closeSource() {
         source?.cancel()   // cancel handler closes the descriptor
         source = nil

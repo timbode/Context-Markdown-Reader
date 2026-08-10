@@ -3,7 +3,7 @@
 // Renders a Markdown file through the app's own web assets and writes a PNG,
 // so the typography can be reviewed without Screen Recording permission.
 //
-//   snapshot <appResourcesDir> <file.md> <out.png> <width> <light|dark>
+//   snapshot <appResourcesDir> <file.md> <out.png> <width> <light|dark> [sliceHeight]
 
 import AppKit
 import WebKit
@@ -24,7 +24,17 @@ let theme = args[5]
 /// Optional 6th argument: cut the page into slices this many points tall.
 let sliceHeight = args.count > 6 ? (Double(args[6]) ?? 0) : 0
 
+/// Drives an offscreen WKWebView through one render and writes the result.
+///
+/// A one-shot object: `run()` starts an asynchronous chain that ends in
+/// `exit()`, so nothing is returned and the instance is never reused.
 final class Snapshotter: NSObject, WKNavigationDelegate {
+    /// Derives the filename for one slice of a sliced capture.
+    ///
+    /// - Parameters:
+    ///   - url: The output path given on the command line.
+    ///   - index: Zero-based slice number.
+    /// - Returns: `<stem>-NN.png` beside the original.
     static func numbered(_ url: URL, _ index: Int) -> URL {
         let stem = url.deletingPathExtension().lastPathComponent
         return url.deletingLastPathComponent()
@@ -34,6 +44,10 @@ final class Snapshotter: NSObject, WKNavigationDelegate {
     let webView: WKWebView
     let window: NSWindow
 
+    /// Builds the webview and the offscreen window that hosts it.
+    ///
+    /// Reads the parsed command-line globals above; there is exactly one
+    /// instance per process, so they are not worth threading through.
     override init() {
         let configuration = WKWebViewConfiguration()
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: width, height: 900),
@@ -50,11 +64,17 @@ final class Snapshotter: NSObject, WKNavigationDelegate {
         webView.navigationDelegate = self
     }
 
+    /// Starts the page load. Everything after this happens in delegate
+    /// callbacks, so the caller must run the main loop.
     func run() {
         webView.loadFileURL(appDirectory.appendingPathComponent("index.html"),
                             allowingReadAccessTo: appDirectory)
     }
 
+    /// Renders the Markdown once the page is ready, then captures it.
+    ///
+    /// Exits with status 1 if the Markdown cannot be read. Content height is
+    /// clamped to 400…6000pt, past which a single capture stops being useful.
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard let source = try? String(contentsOf: markdownURL, encoding: .utf8) else {
             FileHandle.standardError.write("cannot read markdown\n".data(using: .utf8)!)
@@ -74,6 +94,11 @@ final class Snapshotter: NSObject, WKNavigationDelegate {
         }
     }
 
+    /// Grows the window to the full content height, captures it, and writes PNGs.
+    ///
+    /// - Parameter height: Content height in points.
+    /// - Note: Never returns — exits 0 once the files are written, or 1 if the
+    ///   capture fails.
     private func capture(height: Double) {
         window.setContentSize(NSSize(width: width, height: height))
         webView.frame = NSRect(x: 0, y: 0, width: width, height: height)
