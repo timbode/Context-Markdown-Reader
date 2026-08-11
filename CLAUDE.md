@@ -163,6 +163,18 @@ message says so.
 ## Deliberate choices, not oversights
 
 - `LSHandlerRank` is `Alternate`, so Context does not take over `.md` system-wide.
+- **One window, one document** — a `Window` scene rather than a `WindowGroup`,
+  with `Document` and `FindModel` as singletons. A v0.1 decision, not a belief
+  about how a reader should work; opening a set takes the first and says so
+  rather than dropping the rest in silence.
+
+  Making it multi-window is contained, and worth knowing the shape of before
+  starting: `WindowGroup(for: URL.self)`; one `Document` and one `FindModel` per
+  window instead of `.shared`; menu commands reading `@FocusedValue` rather than
+  the singletons, so they act on the focused window; `application(open:)`
+  opening a window per URL. The file watcher needs nothing — it already lives on
+  the document and would follow it. `@AppStorage` for zoom and editor width
+  would become shared across windows, which is probably what you want anyway.
 - The Swift target is `arm64` only, not universal. Nothing depends on that
   beyond the machine it was written on; widening it is a one-line change to
   `-target` in `build.sh` (or two builds and `lipo`).
