@@ -128,6 +128,16 @@ final class Document: ObservableObject {
     /// Dismisses the status banner.
     func clearStatus() { status = nil }
 
+    /// Says something in the status banner that isn't about opening or saving.
+    ///
+    /// `status` is otherwise written only from this class, which owns when it is
+    /// cleared. The preview needs it too: refusing to launch a file the reader
+    /// clicked is a decision they have to be told about, or the click just looks
+    /// broken.
+    ///
+    /// - Parameter message: What happened, in the reader's terms.
+    func note(_ message: String) { status = message }
+
     /// Records an edit made in the editor pane.
     ///
     /// Editor edits arrive here so they can be distinguished from a disk load:
