@@ -87,6 +87,7 @@ right-click the app and choose Open once.
 
 ## Not yet
 
-Single window (one document at a time), no outline sidebar, no PDF export, no
-scroll sync between the panes. Find is plain text — no regular expressions, no
-case-sensitive or whole-word toggle.
+Single window, one document at a time — open several and Context takes the first
+and tells you so. No outline sidebar, no PDF export, no scroll sync between the
+panes. Find is plain text — no regular expressions, no case-sensitive or
+whole-word toggle.

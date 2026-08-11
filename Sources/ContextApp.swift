@@ -139,10 +139,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Finder double-clicks and `open -a Context file.md` arrive here.
     ///
     /// - Parameter urls: Candidates from the system. Context is single-document,
-    ///   so the first file URL wins and the rest are ignored.
+    ///   so `Document.open(_:)` takes the first and says so when there were more.
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard let url = urls.first(where: \.isFileURL) else { return }
-        MainActor.assumeIsolated { Document.shared.open(url) }
+        MainActor.assumeIsolated { Document.shared.open(urls) }
     }
 
     /// - Returns: True — with one window and no document model to keep alive,

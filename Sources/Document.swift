@@ -86,6 +86,27 @@ final class Document: ObservableObject {
         }
     }
 
+    /// Opens the first of several files, and says which one that was.
+    ///
+    /// Context shows one document at a time, so a request to open a set — Finder
+    /// with three files selected, or `open -a Context *.md` — can only be partly
+    /// honoured. Discarding the rest in silence is indistinguishable from failing
+    /// to open them, so the banner names the one that was taken.
+    ///
+    /// - Parameter urls: Candidates. Non-file URLs are ignored, and an empty list
+    ///   leaves the current document alone.
+    func open(_ urls: [URL]) {
+        let files = urls.filter(\.isFileURL)
+        guard let first = files.first else { return }
+        open(first)
+
+        // `open` clears the banner on success and writes to it on failure. Both
+        // are more specific than a count — including the Latin-1 fallback, which
+        // is worth more to the reader than knowing two files were skipped.
+        guard files.count > 1, url == first, status == nil else { return }
+        status = "Opened \(first.lastPathComponent) — Context shows one file at a time"
+    }
+
     /// Installs decoded contents as the current document.
     ///
     /// The single place where all of the open-state fields move together, so
