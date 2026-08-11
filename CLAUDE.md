@@ -164,6 +164,68 @@ which is why `render` takes a URL it otherwise has no use for. Preserving it
 unconditionally is the obvious-looking bug: following a link from 1200px down
 left you 1200px into a document you had never seen.
 
+## A document is untrusted input
+
+Markdown arrives from other people — a repo you cloned, a file a colleague sent.
+The reading pane is therefore where somebody else's content meets your machine.
+Three things were measured against a deliberately hostile fixture, and all three
+were real before they were fixed:
+
+- **`<img onerror=…>` executed.** Raw HTML is on (`html: true`), and `innerHTML`
+  does *not* run `<script>` but does fire event handlers. Arbitrary JavaScript,
+  from opening a file.
+- **The page could phone home.** `<img src="http://…">` fired on render with no
+  script at all — a tracking pixel in a Markdown file — and script could put data
+  in the query string. A local listener logged the `?leak=…` arriving.
+- **A scripted navigation escaped.** `decidePolicyFor` inspected only
+  `.linkActivated`, so `location.href = 'https://…'` fell through to `.allow` and
+  replaced the reader with a live remote page, in a window with no address bar to
+  give it away.
+
+What was never possible, and still is not: reading local files back into script.
+`fetch` is blocked, an iframe or `<object>` on the custom scheme is cross-origin
+(`contentDocument` is null), and a local image taints a canvas — `getImageData`
+throws `SecurityError`. WebKit's origin model holds. So none of the above reached
+your files; they reached the fact that you opened a document, and the pixels in
+front of you.
+
+Two controls now stand in the way, and **both are load-bearing**:
+
+1. **The CSP in `Web/index.html`.** `script-src 'self'` kills inline handlers;
+   the absence of any remote source kills beacons. Verified: `inlineHandlerRan`
+   goes true → false and the listener receives nothing. Verified also to cost
+   nothing — KaTeX (135 inline style attributes), highlight.js, the webfonts and
+   the find bridge produce byte-identical numbers with it and without it.
+2. **Deny-by-default in `decidePolicyFor`.** Only a click, or the bundled page
+   itself, may navigate; everything else is cancelled.
+
+They are independent on purpose. `evaluateJavaScript` from the Swift side is not
+subject to the CSP — which is why the bridge still works, and why a probe can
+still simulate script execution to test the second control with the first one
+neutralised.
+
+## Clicking a link must never run anything
+
+`NSWorkspace.open` on a resolved link was one click from code execution: a
+`.command` beside the document runs in Terminal, and a file that arrived by `git
+clone` carries no quarantine, so Gatekeeper never sees it. Measured — a cloned
+`.command` has only `com.apple.provenance`, and keeps its execute bit.
+
+Non-Markdown links now go through `isInert`, which opens only types on a narrow
+allowlist and reveals everything else in the Finder. Conformance is untrustworthy
+in both directions, and the list was narrowed twice by measurement, not reading:
+
+- `.command` is `public.shell-script` → `public.script` → `public.plain-text`, so
+  an allowlist naming plain text waves it straight through.
+- `.pkg` conforms to `public.archive`.
+- `.mobileconfig` conforms to `public.xml`, and carries certificates or MDM
+  enrolment.
+
+Hence `public.archive` and `public.xml` are absent from the allowlist, and the two
+identifiers with no `UTType` constant are named as strings. When changing either
+list, re-run the type probe over a directory of real files rather than reasoning
+about the graph — that is how both holes were found, and reading found neither.
+
 ## Why the panes never branch on `editorVisible`
 
 `ContentView` keeps both panes in the tree always and collapses the editor to

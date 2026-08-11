@@ -95,6 +95,26 @@ It registers as an *alternate* handler for `.md` — Context shows up in "Open
 With" without taking over every Markdown file on the machine. Set it as the
 default yourself in Finder if you want that.
 
+## Opening documents other people wrote
+
+A Markdown file is untrusted input — it came from a repo you cloned or a
+colleague's message — so the reading pane is closed down rather than open by
+default:
+
+- Nothing in a document can execute script, enforced by a Content-Security-Policy
+  rather than by trusting the Markdown.
+- **Nothing in a document reaches the network.** No remote images, so a file
+  cannot report that you opened it. The visible cost is that badges and other
+  externally hosted images show as broken — that is the trade, and it is
+  deliberate.
+- A document cannot navigate the pane anywhere. Only a link you click does.
+- A link to a local file opens it only when opening merely *shows* it. Anything
+  that would run — an app, a `.command`, an installer, a configuration profile —
+  is revealed in the Finder instead, and the banner tells you why.
+
+None of this replaces judgement about what you open, and Context is a reader, not
+a sandbox. But a document you were sent cannot act on your machine by being read.
+
 ## Layout
 
 ```

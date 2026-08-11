@@ -148,8 +148,13 @@ struct PreviewView: NSViewRepresentable {
         /// Routes clicked links; nothing ever navigates the pane away from the
         /// rendered document.
         ///
-        /// Markdown opens in Context, other local files and web links go to the
-        /// system, and in-page anchors are left to WebKit.
+        /// Markdown opens in Context, web links go to the browser, other local
+        /// files are shown or revealed, and in-page anchors are left to WebKit.
+        ///
+        /// The policy is deny-by-default. A document is untrusted input, and the
+        /// only navigations it has any business causing are the ones enumerated
+        /// here — everything else is cancelled rather than allowed, including the
+        /// navigations it did not have to be clicked to start.
         ///
         /// - Parameter decisionHandler: Called exactly once, as WebKit requires.
         func webView(
@@ -157,16 +162,25 @@ struct PreviewView: NSViewRepresentable {
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
-            guard navigationAction.navigationType == .linkActivated,
-                  let url = navigationAction.request.url else {
-                decisionHandler(.allow)
+            guard let url = navigationAction.request.url else {
+                decisionHandler(.cancel)
+                return
+            }
+
+            // Not a click: either the initial load of the bundled page, or
+            // something the document started on its own. Only the first is
+            // wanted. A scripted `location.href` is reported as `.other`, and
+            // allowing it would let a document replace the reader with a remote
+            // page — inside a window with no address bar to give it away.
+            guard navigationAction.navigationType == .linkActivated else {
+                decisionHandler(Self.isBundledPage(url) ? .allow : .cancel)
                 return
             }
 
             switch url.scheme {
             case Self.scheme:
                 // A relative link in the document. Markdown opens in Context;
-                // anything else goes to whichever app owns it.
+                // anything else is handed over only if opening it merely shows it.
                 if let resolved = Self.resolve(url) {
                     if Self.markdownExtensions.contains(resolved.pathExtension.lowercased()) {
                         // `resolve` deals in file paths and drops the fragment, so
@@ -175,7 +189,7 @@ struct PreviewView: NSViewRepresentable {
                         pendingAnchor = url.fragment
                         MainActor.assumeIsolated { Document.shared.open(resolved) }
                     } else {
-                        NSWorkspace.shared.open(resolved)
+                        MainActor.assumeIsolated { Self.reveal(resolved) }
                     }
                 }
                 decisionHandler(.cancel)
@@ -185,8 +199,10 @@ struct PreviewView: NSViewRepresentable {
                 decisionHandler(.cancel)
 
             default:
-                // file:// with a fragment — an in-page anchor. Let WebKit scroll.
-                decisionHandler(.allow)
+                // A fragment inside the page already on screen: WebKit scrolls
+                // it. Any other file:// target is a document trying to read the
+                // disk through the window, and is refused.
+                decisionHandler(Self.isBundledPage(url) ? .allow : .cancel)
             }
         }
 
@@ -194,6 +210,90 @@ struct PreviewView: NSViewRepresentable {
         /// being handed to the system.
         static let markdownExtensions: Set<String> = [
             "md", "markdown", "mdown", "mkd", "mdwn", "qmd", "rmd", "text", "txt",
+        ]
+
+        /// The one page this pane is ever allowed to be showing.
+        static let bundledPage: URL? = Bundle.main.resourceURL?
+            .appendingPathComponent("app/index.html")
+            .standardizedFileURL
+
+        /// Whether `url` addresses the bundled page itself.
+        ///
+        /// - Parameter url: Any navigation target.
+        /// - Returns: True for `…/Resources/app/index.html`, with or without a
+        ///   fragment — `path` carries neither query nor fragment, so an in-page
+        ///   anchor compares equal to the bare page, which is what makes a
+        ///   heading link work while `file:///etc/passwd` does not.
+        static func isBundledPage(_ url: URL) -> Bool {
+            guard url.isFileURL, let page = Self.bundledPage else { return false }
+            return url.standardizedFileURL.path == page.path
+        }
+
+        /// Opens a non-Markdown local file if that only displays it, and reveals
+        /// it in the Finder if it might do anything more.
+        ///
+        /// A link is a reader's instruction to *look* at something. LaunchServices
+        /// draws no such line: handed a `.command` or an `.app` sitting beside the
+        /// document, it runs it, and a file that arrived by `git clone` carries no
+        /// quarantine, so Gatekeeper does not intervene either. One click would be
+        /// the whole of the attack.
+        ///
+        /// - Parameter url: A resolved local file.
+        /// - Postcondition: Either the file is open in its owning app, or it is
+        ///   selected in the Finder and the banner says why.
+        static func reveal(_ url: URL) {
+            guard Self.isInert(url) else {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+                Document.shared.note(
+                    "Revealed \(url.lastPathComponent) in the Finder — Context doesn't run files"
+                )
+                return
+            }
+            NSWorkspace.shared.open(url)
+        }
+
+        /// Whether opening `url` through LaunchServices can only display it.
+        ///
+        /// Conformance alone is not enough in either direction, so both lists are
+        /// consulted. The trap is `.command`: it conforms to `public.shell-script`,
+        /// which conforms up through `public.script` to `public.plain-text` — so an
+        /// allowlist naming plain text would wave straight past it, and Terminal
+        /// would run it.
+        ///
+        /// - Parameter url: A local file.
+        /// - Returns: True only for a type on the viewable list that is on no
+        ///   runnable list and carries no execute bit.
+        static func isInert(_ url: URL) -> Bool {
+            guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
+            if FileManager.default.isExecutableFile(atPath: url.path) { return false }
+            if Self.runnableTypes.contains(where: type.conforms(to:)) { return false }
+            return Self.viewableTypes.contains(where: type.conforms(to:))
+        }
+
+        /// Types LaunchServices executes, installs or follows rather than shows.
+        ///
+        /// The named identifiers have no `UTType` constant but are the two that
+        /// slipped through the allowlist when it was first measured: a `.pkg`
+        /// conforms to `public.archive`, and a `.mobileconfig` — which can carry
+        /// a certificate or an MDM enrolment — conforms to `public.xml`.
+        static let runnableTypes: [UTType] = [
+            .application, .unixExecutable, .executable, .script, .shellScript,
+            .appleScript, .osaScript, .diskImage, .symbolicLink, .aliasFile,
+            .internetShortcut, .bookmark,
+        ] + ["com.apple.mobileconfig", "com.apple.installer-package-archive"]
+            .compactMap { UTType($0) }
+
+        /// Types a reader can be shown with nothing running on their behalf.
+        ///
+        /// Deliberately narrow, and narrowed twice already by measurement rather
+        /// than by reading the type graph. `public.archive` is left out because an
+        /// installer conforms to it; `public.xml` because a configuration profile
+        /// does. What remains are formats whose only reading is "look at this".
+        /// A type that misses the list is revealed in the Finder, which costs a
+        /// reader one click and costs an attacker the whole attack.
+        static let viewableTypes: [UTType] = [
+            .image, .pdf, .plainText, .rtf, .html, .json, .sourceCode,
+            .movie, .audio, .spreadsheet, .presentation,
         ]
 
         // MARK: Local resources

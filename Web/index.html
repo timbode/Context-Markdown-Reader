@@ -2,6 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <!-- Load-bearing, not boilerplate. Markdown is rendered with raw HTML enabled,
+       so a document somebody else wrote can put an element into this page; this
+       is what stops that element doing anything. `script-src 'self'` kills inline
+       handlers (`<img onerror=…>` is the one that actually fires through
+       innerHTML), and the absence of any remote source stops a document phoning
+       home when it is merely opened. Removing a directive here re-opens a hole
+       that was measured, not imagined — see CLAUDE.md. -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'none';
+    script-src 'self';
+    style-src 'self' 'unsafe-inline';
+    img-src 'self' context-doc: data:;
+    font-src 'self';
+    connect-src 'none';
+    object-src 'none';
+    frame-src 'none';
+    base-uri 'none';
+    form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Context</title>
   <link rel="stylesheet" href="katex/katex.min.css">
