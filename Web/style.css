@@ -165,6 +165,11 @@ h1, h2, h3, h4, h5, h6 {
 
 #doc > :first-child { margin-top: 0; }
 
+/* A fragment link lands flush against the top of the window, which reads as if
+   the heading were cut off. Honoured by WebKit's own scroll for an in-page link
+   and by scrollIntoView for one arriving from another file, so both agree. */
+#doc [id] { scroll-margin-top: 1.75rem; }
+
 h1 { font-size: 2.05em; letter-spacing: -0.028em; margin-top: 0; }
 h2 { font-size: 1.5em; }
 h3 { font-size: 1.2em; }

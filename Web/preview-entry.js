@@ -196,15 +196,18 @@ window.Context = {
    *
    * @param {string} b64 - Base64-encoded UTF-8 Markdown. Swift encodes it so no
    *   escaping games are needed to get it across the JS bridge.
+   * @param {boolean} [keepScroll] - Hold the reading position. True for a
+   *   re-render of the document already on screen, where an edit or a reload
+   *   from the watcher must not move you; false for a different document, which
+   *   starts at the top rather than at whatever offset the last one was left at.
    *
-   * Scroll position is preserved: a reload from a file-watch event should leave
-   * you where you were reading. An empty document puts the body in the `empty`
-   * state, which reveals the placeholder.
+   * An empty document puts the body in the `empty` state, which reveals the
+   * placeholder.
    */
-  renderBase64(b64) {
+  renderBase64(b64, keepScroll) {
     const src = decodeBase64Utf8(b64)
 
-    const scroll = document.documentElement.scrollTop
+    const scroll = keepScroll ? document.documentElement.scrollTop : 0
 
     const el = doc()
     el.innerHTML = md.render(src)
@@ -216,9 +219,23 @@ window.Context = {
     document.documentElement.scrollTop = scroll
   },
 
-  /** Scrolls the document back to the top, animated. */
-  scrollToTop() {
-    document.documentElement.scrollTo({ top: 0, behavior: 'smooth' })
+  /**
+   * Scrolls to an element by id, for a link that arrived from another file.
+   *
+   * WebKit does this itself for a link within the page, but a cross-file link is
+   * not a navigation at all — the document is replaced under the same URL — so
+   * the fragment has to be spent by hand once the new text is on screen.
+   *
+   * @param {string} b64 - Base64-encoded UTF-8 fragment, without the '#'.
+   * @returns {boolean} Whether anything carried that id.
+   */
+  scrollToAnchor(b64) {
+    const target = document.getElementById(decodeBase64Utf8(b64))
+    if (!target) return false
+    // block:'start' honours scroll-margin-top, so this lands with the same air
+    // above it as WebKit's own scroll for an in-page link.
+    target.scrollIntoView({ block: 'start', behavior: 'auto' })
+    return true
   },
 
   /**

@@ -48,8 +48,10 @@ binary. Neither is tested here.
   position — so it works as a live preview for whatever editor you actually use.
   Unsaved edits in Context's own editor are never overwritten by a disk change.
 - **Relative links and images** resolve against the document's folder; a
-  relative link to another `.md` opens it in Context, everything else goes to
-  whichever app owns it.
+  relative link to another `.md` opens it in Context — at the right section if
+  the link names one — and everything else goes to whichever app owns it.
+- **Links within the page** work as they do in a browser: a link to a heading,
+  and a footnote and its way back.
 
 It registers as an *alternate* handler for `.md` — Context shows up in "Open
 With" without taking over every Markdown file on the machine. Set it as the

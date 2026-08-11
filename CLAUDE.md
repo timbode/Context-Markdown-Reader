@@ -118,6 +118,21 @@ numbers against each other.
 Measure rather than eyeball: render with `Tools/Snapshot.swift` and scan the PNG
 for rows containing ink; the gaps between those bands are the real numbers.
 
+## Two kinds of link, and only one of them is a navigation
+
+`[x](#heading)` really navigates: WebKit scrolls it, and `decidePolicyFor` only
+has to allow it. `[x](other.md#heading)` does not navigate at all — the document
+is replaced under the same page URL — so nothing scrolls by itself. The fragment
+has to be carried across the hop by hand (`Coordinator.pendingAnchor`) and spent
+once the new text is on screen, because `resolve` deals in file paths and drops
+it. Both land with the same air above the heading, via `scroll-margin-top` on
+`#doc [id]`, which `scrollIntoView` and WebKit's own scroll both honour.
+
+`renderBase64` keeps the reading position **only when the file is the same one**,
+which is why `render` takes a URL it otherwise has no use for. Preserving it
+unconditionally is the obvious-looking bug: following a link from 1200px down
+left you 1200px into a document you had never seen.
+
 ## Why the panes never branch on `editorVisible`
 
 `ContentView` keeps both panes in the tree always and collapses the editor to

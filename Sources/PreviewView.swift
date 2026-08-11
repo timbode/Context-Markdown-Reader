@@ -51,7 +51,7 @@ struct PreviewView: NSViewRepresentable {
     /// no-op churn.
     func updateNSView(_ webView: WKWebView, context: Context) {
         if webView.pageZoom != zoom { webView.pageZoom = zoom }
-        context.coordinator.render(doc.renderSource, in: webView)
+        context.coordinator.render(doc.renderSource, from: doc.url, in: webView)
     }
 
     /// Owns everything that has to survive a view update: the load state, the
@@ -66,23 +66,40 @@ struct PreviewView: NSViewRepresentable {
         private var pending: String?
         private var lastRendered: String?
 
+        /// The file last rendered, which is the only way to tell a re-render of
+        /// what you are reading from a move to a different document.
+        private var lastURL: URL?
+
+        /// The fragment of a link into another file, waiting for that file to be
+        /// on screen before it can be spent.
+        private var pendingAnchor: String?
+
         // MARK: Rendering
 
         /// Renders `source`, or defers it if the page is still loading.
         ///
         /// - Parameters:
         ///   - source: Markdown to display.
+        ///   - url: The file it came from, or nil for an empty document.
         ///   - webView: The view to render into.
         /// - Note: Identical source is dropped, which is what makes this safe to
         ///   call from `updateNSView` on every SwiftUI pass.
-        func render(_ source: String, in webView: WKWebView) {
-            guard source != lastRendered else { return }
+        func render(_ source: String, from url: URL?, in webView: WKWebView) {
+            let isSameDocument = url == lastURL
+            lastURL = url
+
+            guard source != lastRendered else {
+                // No new text, but a link may still be waiting to scroll: one
+                // pointing into the file that is already open changes nothing.
+                flushAnchor(in: webView)
+                return
+            }
             lastRendered = source
             guard isLoaded else {
                 pending = source
                 return
             }
-            push(source, to: webView)
+            push(source, to: webView, keepScroll: isSameDocument)
         }
 
         /// Hands source to the page's renderer.
@@ -91,20 +108,37 @@ struct PreviewView: NSViewRepresentable {
         ///   - source: Markdown, base64-encoded on the way across so no quoting
         ///     or escaping is needed to build the call.
         ///   - webView: The view to evaluate in; must have finished loading.
-        private func push(_ source: String, to webView: WKWebView) {
+        ///   - keepScroll: Whether to hold the reading position. True re-renders
+        ///     what is already on screen — an edit, or a reload from the watcher.
+        ///     False opens something else, which starts at the top rather than at
+        ///     the offset the last document happened to be left at.
+        private func push(_ source: String, to webView: WKWebView, keepScroll: Bool) {
             let encoded = Data(source.utf8).base64EncodedString()
-            webView.evaluateJavaScript("window.Context.renderBase64('\(encoded)')")
+            webView.evaluateJavaScript("window.Context.renderBase64('\(encoded)', \(keepScroll))")
             // A render replaces every node an active search was pointing at, so
-            // the matches have to be found again. WebKit runs the two scripts in
-            // the order they were queued, so this always sees the new document.
+            // the matches have to be found again. WebKit runs these scripts in
+            // the order they were queued, so both see the new document.
             MainActor.assumeIsolated { FindModel.shared.refresh() }
+            flushAnchor(in: webView)
+        }
+
+        /// Scrolls to the fragment a cross-file link was carrying, if any.
+        ///
+        /// - Parameter webView: The view now showing the linked document.
+        /// - Note: A fragment naming nothing is simply dropped, as it is in a
+        ///   browser.
+        private func flushAnchor(in webView: WKWebView) {
+            guard let anchor = pendingAnchor else { return }
+            pendingAnchor = nil
+            let encoded = Data(anchor.utf8).base64EncodedString()
+            webView.evaluateJavaScript("window.Context.scrollToAnchor('\(encoded)')")
         }
 
         /// Marks the page ready and flushes anything that arrived while loading.
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             isLoaded = true
             if let pending {
-                push(pending, to: webView)
+                push(pending, to: webView, keepScroll: false)
                 self.pending = nil
             }
         }
@@ -135,6 +169,10 @@ struct PreviewView: NSViewRepresentable {
                 // anything else goes to whichever app owns it.
                 if let resolved = Self.resolve(url) {
                     if Self.markdownExtensions.contains(resolved.pathExtension.lowercased()) {
+                        // `resolve` deals in file paths and drops the fragment, so
+                        // a link to a section of another file — the one link that
+                        // crosses documents — would land at the top without this.
+                        pendingAnchor = url.fragment
                         MainActor.assumeIsolated { Document.shared.open(resolved) }
                     } else {
                         NSWorkspace.shared.open(resolved)
