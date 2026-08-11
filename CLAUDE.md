@@ -14,8 +14,12 @@ Consequences:
   `Tools/MakeIcon.swift` draws it with Core Graphics and `iconutil` packs the
   `.iconset`. Regenerate with:
   `swiftc -O -o build/tools/makeicon Tools/MakeIcon.swift && ./build/tools/makeicon build/AppIcon.iconset && iconutil --convert icns --output Resources/AppIcon.icns build/AppIcon.iconset`
-- Notarising for distribution to other machines would need Xcode
-  (`notarytool`). Ad-hoc signing is all that's needed to run it here.
+- Notarising does **not** need Xcode, contrary to the obvious guess:
+  `notarytool` and `stapler` both ship in the Command Line Tools. What is
+  missing is a Developer ID certificate — `security find-identity -v -p
+  codesigning` finds none — so there is nothing to sign with and ad-hoc is as
+  far as this build reaches. Buying into the Developer Program is the whole of
+  the remaining work; the tooling is already here.
 - `swiftc` defaults to Swift 5 language mode, so strict concurrency is not
   enforced. That's why `MainActor.assumeIsolated` appears in delegate
   callbacks rather than a full actor-isolation refactor.
@@ -31,6 +35,33 @@ The whole target then fails with "cannot use module 'Context' as a type".
 The trap when checking this: compiling with `-o /dev/null` derives a *different*
 module name and succeeds, so a quick syntax check will not reproduce it. Test
 with the real output path, or just run `./build.sh`.
+
+## What ad-hoc signing costs the people you send it to
+
+`spctl -a` rejects the app — signed or not — because the signature carries no
+Developer ID. That verdict only bites on a copy that is *quarantined*, which is
+the attribute a browser writes on download. Hence the asymmetry the README is
+built around: a locally built app launches with no prompt at all, and a
+downloaded one is refused outright.
+
+**macOS 15 removed the Control-click-and-Open override** for apps that aren't
+notarised. The route is now System Settings → Privacy & Security → Open Anyway,
+or `xattr -d com.apple.quarantine`. Any instruction still naming the old one is
+stale; check the README stays in step if Apple moves it again.
+
+The release zip is built with `ditto -c -k --keepParent`, not `zip`. A bundle
+carries a signature and extended attributes that plain `zip` does not preserve,
+and an archive arriving with a broken seal is worse than none. Verified: after a
+ditto round-trip `codesign --verify --deep --strict` reports "valid on disk" and
+"satisfies its Designated Requirement".
+
+To check any of this without waiting for someone to complain, quarantine a copy
+by hand — the bit is not magic:
+
+```sh
+xattr -w com.apple.quarantine "0083;68a0000;Safari;" /path/to/Context.app
+spctl -a -vvv --type execute /path/to/Context.app
+```
 
 ## Screenshots need Screen Recording permission — the snapshot tool does not
 

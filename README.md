@@ -3,25 +3,63 @@
 A Markdown reader for macOS. One column, a fixed measure, system type — the
 editor is a guest you summon with `⌘E` and dismiss when you're done.
 
-Native SwiftUI shell around a WKWebView preview. 1.7 MB installed; no Xcode
+Native SwiftUI shell around a WKWebView preview. 1.9 MB installed; no Xcode
 required to build it.
 
-## Build
-
-```sh
-npm install     # once
-./build.sh      # → build/Context.app
-```
-
-Needs the Command Line Tools (`swiftc`) and Node — **not** Xcode. `build.sh`
-bundles the web assets with esbuild, compiles the Swift, assembles the bundle by
-hand, and ad-hoc signs it.
-
-Install with `cp -R build/Context.app /Applications/`.
+## Install
 
 **Requirements:** macOS 14 or later, Apple Silicon. The build targets `arm64`
 only; for an Intel Mac change `-target` in `build.sh`, or make it a universal
 binary. Neither is tested here.
+
+### From a release
+
+Unzip `Context-0.1.0.zip` and drag `Context.app` to `/Applications`.
+
+Context is **ad-hoc signed and not notarised** — there is no paid Apple
+Developer ID behind it — so macOS blocks the first launch outright, with a
+dialog saying it cannot verify the app is free of malware. Getting past that is
+a deliberate choice you have to make, and on macOS 15 and later it is made here:
+
+1. Try to open the app once. Dismiss the warning.
+2. **System Settings → Privacy & Security**, scroll down to Security, and click
+   **Open Anyway** on the message about Context.
+3. Confirm. It opens, and every launch after that is ordinary.
+
+Control-clicking the app and choosing Open used to do this in one step. macOS 15
+removed that route for apps that aren't notarised, so anyone still repeating that
+advice — including older copies of this README — is giving you instructions that
+no longer work.
+
+The same decision from a terminal, if you prefer it:
+
+```sh
+xattr -d com.apple.quarantine /Applications/Context.app
+```
+
+Either way you are waiving Gatekeeper's check on *where the app came from*, not
+on whether it is intact. The signature is untouched, and you can say so yourself
+before you trust it:
+
+```sh
+codesign --verify --deep --strict --verbose=2 /Applications/Context.app
+spctl -a -vvv /Applications/Context.app     # "rejected" — no Developer ID, as documented
+```
+
+### From source
+
+```sh
+npm install     # once
+./build.sh      # → build/Context.app, build/Context-0.1.0.zip
+cp -R build/Context.app /Applications/
+```
+
+Needs the Command Line Tools (`swiftc`) and Node — **not** Xcode. `build.sh`
+bundles the web assets with esbuild, compiles the Swift, assembles the bundle by
+hand, ad-hoc signs it, and packages the zip.
+
+Nothing you build yourself is quarantined, so this path shows no warning at all —
+it is the shorter road if you have the tools already.
 
 ## Keys
 
@@ -81,9 +119,6 @@ The source tree vendors no dependencies. A *built* `Context.app` embeds
 markdown-it, KaTeX and highlight.js, all permissive (MIT / ISC / BSD-3-Clause);
 `THIRD-PARTY-NOTICES.md` carries their notices and must ship alongside any
 binary you distribute.
-
-Releases are ad-hoc signed, not notarised, so macOS will warn on first open —
-right-click the app and choose Open once.
 
 ## Not yet
 

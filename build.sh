@@ -96,5 +96,15 @@ fi
 echo "==> Signing (ad-hoc)"
 codesign --force --deep --sign - "$APP"
 
+echo "==> Packaging"
+# ditto, not zip: an app bundle carries extended attributes and a signature that
+# plain zip does not preserve, and an archive that arrives with a broken seal is
+# worse than none. Verified with `codesign --verify --deep --strict` after a
+# round-trip.
+ZIP="$ROOT/build/Context-$VERSION.zip"
+rm -f "$ZIP"
+ditto -c -k --keepParent "$APP" "$ZIP"
+
 echo "==> Built $APP"
 du -sh "$APP" | sed 's/^/    /'
+du -h "$ZIP" | sed 's/^/    /'
