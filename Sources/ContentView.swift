@@ -15,6 +15,7 @@ enum Prefs {
 /// pane, with a status banner floating over them.
 struct ContentView: View {
     @ObservedObject private var doc = Document.shared
+    @ObservedObject private var find = FindModel.shared
     @AppStorage(Prefs.editorVisible) private var editorVisible = false
     @AppStorage(Prefs.editorWidth) private var editorWidth: Double = 400
     @AppStorage(Prefs.zoom) private var zoom: Double = 1.0
@@ -39,8 +40,18 @@ struct ContentView: View {
 
             PreviewView(doc: doc, zoom: zoom)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Over the pane, not above it: the page's own top padding means
+                // the bar usually covers nothing, and giving it a row of its own
+                // would resize the webview and reflow the text mid-read.
+                .overlay(alignment: .top) {
+                    if find.isPresented {
+                        FindBar(model: find)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
         }
         .animation(.easeOut(duration: 0.18), value: editorVisible)
+        .animation(.easeOut(duration: 0.14), value: find.isPresented)
         .background(Color(nsColor: Palette.paper))
         .overlay(alignment: .bottom) { statusBanner }
         .background(WindowAccessor { window in

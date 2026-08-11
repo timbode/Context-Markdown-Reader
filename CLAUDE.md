@@ -68,6 +68,40 @@ to the terminal in System Settings → Privacy & Security first.
 - **markdown-it-task-lists** with `label: true` nests the checkbox and the text
   inside a single `<label>`, so the `<li>` has one flex child and `gap` on the
   `<li>` does nothing. The `<label>` is the flex container.
+- **KaTeX emits every formula twice**: the visible HTML, and a MathML copy
+  holding the TeX source, clipped to a 1px box for accessibility. So
+  `textContent` contains `\begin{bmatrix}` and `\sqrt` even though nothing on
+  the page says either. Anything walking the document's text has to skip
+  `.katex-mathml`, or it finds equations by their source and points at nothing.
+- **KaTeX sets `\text{a b}` with a non-breaking space**, so the rendered text is
+  not the text a reader would type.
+
+## Find matches what the page looks like, not what it is made of
+
+`Web/find.js` flattens the document to one string and matches against that. Four
+things stand between the two, and each cost a debugging round:
+
+- Source is hard-wrapped, and those newlines survive into the text node — a
+  phrase crossing one holds `\n` where the reader sees a space.
+- The typographer has already turned quotes curly and `--` into a dash.
+- KaTeX and `&nbsp;` put non-breaking spaces in visible text.
+- Matches cross inline markup (`hello *world*` is three text nodes) but must not
+  cross a block boundary, or two paragraphs join into a word that is nowhere on
+  the page.
+
+So text nodes are concatenated, `\n` is inserted between blocks, and everything
+else is folded — **strictly one character for one**, because offsets into the
+folded string index back into the original nodes. Any fold that changes a length
+silently shifts every match after it.
+
+Matches are painted with the CSS Custom Highlight API rather than wrapped in
+elements: wrapping would restyle the grid and would have to be unpicked before
+the next render. That API needs Safari 17.2, i.e. macOS 14.2 — below it
+`::highlight()` is dropped and `find.js` falls back to the selection.
+
+Ranges point at nodes, so **every render invalidates them**. `PreviewView.push`
+calls `FindModel.refresh()` right after `renderBase64`; WebKit runs the two in
+the order they were queued.
 
 ## Margins never collapse inside `#doc`
 

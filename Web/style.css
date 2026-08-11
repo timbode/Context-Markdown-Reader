@@ -22,6 +22,9 @@
   --surface-edge: #e7e2d9;
   --mark: #f6e6a8;
   --select: #d5e3f0;
+  --find: #f7e3a1;
+  --find-current: #f0ab3a;
+  --find-current-fg: #24221f;
 
   --tok-comment: #8c877e;
   --tok-keyword: #8a4b9c;
@@ -45,6 +48,9 @@
     --surface-edge: #302d2b;
     --mark: #5c5024;
     --select: #2f3f52;
+    --find: #4b4226;
+    --find-current: #a5771d;
+    --find-current-fg: #f6f1e8;
 
     --tok-comment: #7d786f;
     --tok-keyword: #c39ad6;
@@ -67,6 +73,9 @@
   --surface-edge: #302d2b;
   --mark: #5c5024;
   --select: #2f3f52;
+  --find: #4b4226;
+  --find-current: #a5771d;
+  --find-current-fg: #f6f1e8;
 
   --tok-comment: #7d786f;
   --tok-keyword: #c39ad6;
@@ -97,6 +106,16 @@ body {
 }
 
 ::selection { background: var(--select); }
+
+/* Find. Painted through the CSS Custom Highlight API, so showing a match wraps
+   nothing and restyles no element — the ranges sit alongside the document rather
+   than in it. WebKit before Safari 17.2 has no ::highlight() and drops these
+   two rules; `Web/find.js` falls back to the selection there. */
+::highlight(find) { background-color: var(--find); color: var(--fg); }
+::highlight(find-current) {
+  background-color: var(--find-current);
+  color: var(--find-current-fg);
+}
 
 /* ── Reading measure ─────────────────────────────────────────────────────
    Prose sits in the centre `text` track. Code blocks, tables and display

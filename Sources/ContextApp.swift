@@ -52,6 +52,15 @@ struct ContextApp: App {
                 .disabled(doc.url == nil)
             }
 
+            CommandGroup(after: .textEditing) {
+                Button("Find…") { Self.find(.showFindInterface) }
+                    .keyboardShortcut("f", modifiers: .command)
+                Button("Find Next") { Self.find(.nextMatch) }
+                    .keyboardShortcut("g", modifiers: .command)
+                Button("Find Previous") { Self.find(.previousMatch) }
+                    .keyboardShortcut("g", modifiers: [.command, .shift])
+            }
+
             CommandMenu("View") {
                 Button(editorVisible ? "Hide Editor" : "Show Editor") {
                     editorVisible.toggle()
@@ -67,6 +76,33 @@ struct ContextApp: App {
                 Button("Actual Size") { zoom = 1.0 }
                     .keyboardShortcut("0", modifiers: .command)
             }
+        }
+    }
+
+    /// Sends a find command to whichever pane has the keyboard.
+    ///
+    /// The editor is an `NSTextView` with a find bar of its own, and taking ⌘F
+    /// away from it while you are typing in it would be a regression. Anywhere
+    /// else — which is to say, while reading — find means the reading pane.
+    ///
+    /// - Parameter action: What to do. Forwarded verbatim to the editor; the
+    ///   reading pane's equivalent is picked from the same value.
+    static func find(_ action: NSTextFinder.Action) {
+        // isFieldEditor rules out the find bar's own text field, which is an
+        // NSTextView too — without it, typing a query and pressing ⌘G would
+        // search the field you are typing in.
+        if let textView = NSApp.keyWindow?.firstResponder as? NSTextView, !textView.isFieldEditor {
+            let sender = NSMenuItem()
+            sender.tag = action.rawValue
+            textView.performTextFinderAction(sender)
+            return
+        }
+
+        switch action {
+        case .showFindInterface: FindModel.shared.open()
+        case .nextMatch: FindModel.shared.next()
+        case .previousMatch: FindModel.shared.previous()
+        default: break
         }
     }
 

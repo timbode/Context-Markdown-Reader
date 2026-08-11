@@ -36,6 +36,8 @@ import typescript from 'highlight.js/lib/languages/typescript'
 import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
 
+import * as finder from './find.js'
+
 // Registered explicitly rather than pulling highlight.js's "common" bundle:
 // this list is the one that ships, and it costs about a tenth of the full set.
 for (const [name, lang] of Object.entries({
@@ -217,5 +219,44 @@ window.Context = {
   /** Scrolls the document back to the top, animated. */
   scrollToTop() {
     document.documentElement.scrollTo({ top: 0, behavior: 'smooth' })
+  },
+
+  /**
+   * Searches the document and scrolls the first match into view.
+   *
+   * @param {string} b64 - Base64-encoded UTF-8 query, for the same reason the
+   *   Markdown is: no escaping games to get it across the bridge. Empty clears
+   *   the search.
+   * @returns {{count: number, index: number}} Total matches and the 1-based
+   *   position of the current one, 0 when there is none.
+   */
+  find(b64) {
+    return finder.search(doc(), decodeBase64Utf8(b64))
+  },
+
+  /** @returns {{count: number, index: number}} After moving to the next match. */
+  findNext() {
+    return finder.step(1)
+  },
+
+  /** @returns {{count: number, index: number}} After moving to the previous one. */
+  findPrevious() {
+    return finder.step(-1)
+  },
+
+  /**
+   * Rebuilds the match list against the document as it now stands.
+   *
+   * Called after a re-render, whose new nodes the old ranges know nothing about.
+   *
+   * @returns {{count: number, index: number}} The refreshed counts.
+   */
+  findRefresh() {
+    return finder.refresh()
+  },
+
+  /** @returns {{count: number, index: number}} Zeroes; every highlight is gone. */
+  findClear() {
+    return finder.reset()
   },
 }

@@ -38,6 +38,10 @@ struct PreviewView: NSViewRepresentable {
             appDirectory.appendingPathComponent("index.html"),
             allowingReadAccessTo: appDirectory
         )
+
+        // The one pane find searches. Set here rather than passed in, because the
+        // find bar is a sibling in the layout and never sees this view.
+        FindModel.shared.webView = webView
         return webView
     }
 
@@ -90,6 +94,10 @@ struct PreviewView: NSViewRepresentable {
         private func push(_ source: String, to webView: WKWebView) {
             let encoded = Data(source.utf8).base64EncodedString()
             webView.evaluateJavaScript("window.Context.renderBase64('\(encoded)')")
+            // A render replaces every node an active search was pointing at, so
+            // the matches have to be found again. WebKit runs the two scripts in
+            // the order they were queued, so this always sees the new document.
+            MainActor.assumeIsolated { FindModel.shared.refresh() }
         }
 
         /// Marks the page ready and flushes anything that arrived while loading.
