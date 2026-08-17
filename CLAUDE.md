@@ -159,6 +159,10 @@ once the new text is on screen, because `resolve` deals in file paths and drops
 it. Both land with the same air above the heading, via `scroll-margin-top` on
 `#doc [id]`, which `scrollIntoView` and WebKit's own scroll both honour.
 
+⌘-clicking either kind opens the file in a new tab instead, and that one *does*
+lose the fragment: `pendingAnchor` belongs to the pane doing the navigating and
+cannot reach a webview that does not exist yet.
+
 `renderBase64` keeps the reading position **only when the file is the same one**,
 which is why `render` takes a URL it otherwise has no use for. Preserving it
 unconditionally is the obvious-looking bug: following a link from 1200px down
@@ -226,6 +230,118 @@ identifiers with no `UTType` constant are named as strings. When changing either
 list, re-run the type probe over a directory of real files rather than reasoning
 about the graph — that is how both holes were found, and reading found neither.
 
+## Tabs are windows, and SwiftUI keeps making extra ones
+
+A macOS tab group is several `NSWindow`s stacked under one title bar, so the
+tabbed app *is* the multi-window app: `WindowGroup(id:for: URL.self)`, one
+`Document` and one `FindModel` per window, menu commands reading
+`@FocusedValue`. `WindowRouter` is the one thing on top — it holds the register
+of live tabs and answers an open request one of three ways: raise the tab that
+already has the file, fill a tab that has nothing in it, or make one.
+
+Six things about this are not guessable from the docs. Every one was measured,
+and all but the first were bugs before they were findings.
+
+- **`openWindow` does not make a tab.** `tabbingMode = .preferred` is set on
+  every window and is not enough; the new window comes up beside the group.
+  `addTabbedWindow` is what puts it in, and it needs a *host* to join — captured
+  in `WindowRouter.open` at the moment the window is asked for, because by the
+  time the window appears it is itself key and the answer is gone. Restored
+  windows have no host at all, so `attach` falls back to any window already
+  registered.
+
+- **SwiftUI answers the open-documents Apple Event by opening a blank window.**
+  It cannot turn a file into the group's `URL` value, so it opens the group's
+  *default* window and then calls `application(_:open:)`, which opens the file
+  properly — one stray blank tab per file. The blank window is adopted *before*
+  the delegate method runs, which is how this was pinned down. `AppDelegate`
+  therefore takes the `kAEOpenDocuments` handler over itself — but only once the
+  app is up, for the reason two bullets below. Both routes end at
+  `WindowRouter.open`, so `application(_:open:)` is still there and still needed:
+  it is what serves the launch.
+
+- **`applicationShouldHandleReopen` must return `!flag`.** Returning true
+  unconditionally is right for a single-window app and costs a blank tab every
+  time the app is activated from the Dock or by `open -a`.
+
+- **A restore brings back the group's windows *and* opens the default one**, so
+  a session that ended with an empty tab comes back with two, and the count
+  climbs by one per launch. Nothing distinguishes a restored window from a fresh
+  one, hence the sweep inside `settleAfterLaunch()`, on a short delay — a timer
+  because there is no "restoration finished" hook. It also drops duplicate tabs
+  on one file: nothing can *make* one, but a session that once had one restores
+  it for good, with two watchers on a single path.
+
+- **`WKNavigationAction.modifierFlags` is empty.** A ⌘-click arrives as a plain
+  `.linkActivated` with flags of 0, so the documented way to implement
+  open-in-new-tab silently does nothing. Measured with a synthetic `MouseEvent`
+  carrying `metaKey`. It does not go to `WKUIDelegate` either;
+  `createWebViewWith` is for `window.open` and is never called.
+  `isCommandHeld(during:)` therefore consults both the action's flags and
+  `NSEvent.modifierFlags`, the second being the keyboard itself, still true a
+  moment after the mouse-up.
+
+- **Nothing opens at all if the Apple Event is taken over too early.** On a
+  launch driven by documents — double-clicking a `.md` while Context is closed —
+  SwiftUI does not open its default window: it expects the document handler to
+  make the windows. Take the event away in `applicationWillFinishLaunching` and
+  there is never a window, so nothing ever hands `WindowRouter` an `openWindow`
+  to call, and the file sits in `deferred` forever behind an app with an empty
+  screen. Hence `takeOverOpenDocuments()` runs a second *after* launch: the
+  launch itself keeps AppKit's handler, and its one stray blank tab is swept by
+  the same timer.
+
+- **A file asked for during launch cannot be answered during launch.** "Is this
+  one already open?" has no answer while restoration is still bringing tabs back,
+  and answering it anyway costs a second tab on a file that was about to
+  reappear. The symptom is horrible to chase, because it strikes only the file
+  whose restored tab happens to come back *last* — four files out of five look
+  fine. So `WindowRouter` queues every request until `settleAfterLaunch()`, and a
+  tab is registered with the file it is *going to* show (`Tab.intended`) rather
+  than only the one it has already read: a restored tab is empty for the moment
+  between appearing and loading, and would otherwise be taken for a free one.
+
+Watch out for one more thing across all of this: **`==` on two file URLs is not
+"same file"**. A link resolved against the document's folder compares unequal to
+the same path from the Finder even after `.standardizedFileURL.absoluteURL`, and
+`/tmp` and `/private/tmp` spell one file two ways. Measured, and it was a real
+bug: a ⌘-clicked link opened a second tab on a document already in one.
+`WindowRouter.isSameFile` normalises with `resolvingSymlinksInPath()`, and is
+what every "is this already open?" question has to go through.
+
+Where that restoration state lives is worth knowing you *cannot* find: it is not
+in `~/Library/Saved Application State` (no such directory on this machine), not
+in the preferences plist, not in the recent-documents `.sfl3`. To test a
+first-ever launch, build with a different `BUNDLE_ID` — that is the only reliable
+clean slate.
+
+**Test the app the way it is launched.** Running
+`build/Context.app/Contents/MacOS/Context` by hand and then sending it files with
+`open -a` exercises a different path from double-clicking a document with the app
+closed — and the second was completely broken while every test passed, because no
+test ever cold-launched it. `open -a <bundle> <file>` with nothing running is
+the case that matters. Check `/Applications/Context.app`'s date before believing
+a report about behaviour, too: an installed copy is what gets clicked, and
+`build.sh` does not update it.
+
+Testing any of this from a terminal session needs a trick, because System Events
+is refused (`osascript is not allowed assistive access`), so window counts and
+tab groups cannot be read from outside. Instrument instead, with an env-gated
+`probe`, and note that **an app launched by `open` has no stderr you can read** —
+write to a file. `NSApp.windows` with each window's `title`, `isVisible` and
+`tabGroup` identity tells you the whole story; that is how the nine-window launch
+was diagnosed.
+
+Two cheaper checks, worth knowing because they need no build at all. `lsof -p
+$(pgrep -x Context) | grep '\.md'` lists one descriptor per open tab, the file
+watcher's — so duplicate tabs and tabs that failed to open are both visible
+without a probe, though the descriptors lag a closed tab by a few seconds. And
+`ps` tells you *which bundle* is running, which is how the stale
+`/Applications` copy was caught.
+
+Beware `: > log` while the process holds the file open: the offset survives, so
+grep sees a binary hole and prints nothing.
+
 ## Why the panes never branch on `editorVisible`
 
 `ContentView` keeps both panes in the tree always and collapses the editor to
@@ -256,18 +372,8 @@ message says so.
 ## Deliberate choices, not oversights
 
 - `LSHandlerRank` is `Alternate`, so Context does not take over `.md` system-wide.
-- **One window, one document** — a `Window` scene rather than a `WindowGroup`,
-  with `Document` and `FindModel` as singletons. A v0.1 decision, not a belief
-  about how a reader should work; opening a set takes the first and says so
-  rather than dropping the rest in silence.
-
-  Making it multi-window is contained, and worth knowing the shape of before
-  starting: `WindowGroup(for: URL.self)`; one `Document` and one `FindModel` per
-  window instead of `.shared`; menu commands reading `@FocusedValue` rather than
-  the singletons, so they act on the focused window; `application(open:)`
-  opening a window per URL. The file watcher needs nothing — it already lives on
-  the document and would follow it. `@AppStorage` for zoom and editor width
-  would become shared across windows, which is probably what you want anyway.
+- **One tab, one document** — see "Tabs are windows" above. `@AppStorage` for
+  zoom and editor width is deliberately shared across tabs.
 - The Swift target is `arm64` only, not universal. Nothing depends on that
   beyond the machine it was written on; widening it is a one-line change to
   `-target` in `build.sh` (or two builds and `lipo`).

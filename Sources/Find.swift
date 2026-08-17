@@ -2,19 +2,17 @@ import AppKit
 import SwiftUI
 import WebKit
 
-/// Find state for the reading pane, and the only thing that talks to the page's
-/// search.
+/// Find state for one tab's reading pane, and the only thing that talks to the
+/// page's search.
 ///
-/// A singleton for the same reason `Document` is one: the menu commands live in
-/// the `App` and the bar lives in `ContentView`, and both drive the one search
-/// in the one window.
+/// One per tab, like `Document`: each tab searches its own document, and ⌘F
+/// reaches the right one through `@FocusedValue` rather than through a shared
+/// instance.
 ///
 /// Every method is a no-op until `webView` has been set, which `PreviewView`
 /// does as it builds the pane — before that there is nothing to search anyway.
 @MainActor
 final class FindModel: ObservableObject {
-    static let shared = FindModel()
-
     /// Whether the find bar is on screen. Searching only happens while it is.
     @Published private(set) var isPresented = false
 
@@ -35,7 +33,7 @@ final class FindModel: ObservableObject {
     /// view hierarchy owns it and this object outlives any particular webview.
     weak var webView: WKWebView?
 
-    private init() {}
+    init() {}
 
     /// What the bar shows beside the field.
     ///

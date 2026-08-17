@@ -2,12 +2,16 @@ import AppKit
 import Combine
 import Foundation
 
-/// The open Markdown file. Context is a single-window reader, so one instance is
-/// shared by the app delegate, the menu commands and both panes.
+/// The Markdown file open in one tab. One instance per tab, owned by that tab's
+/// `ContentView` and shared by its two panes.
 ///
 /// The type owns three things that have to stay consistent: the text, the URL it
 /// came from, and a watch on that URL. Every transition between them goes
 /// through this class — nothing else opens, saves or reloads a file.
+///
+/// Which tab a file lands in is not decided here: `WindowRouter` does that, and
+/// keeps one document per path so that two tabs never watch and save the same
+/// file.
 ///
 /// Invariants:
 /// - `isDirty` is true only when `url != nil` and `text` differs from disk.
@@ -16,11 +20,6 @@ import Foundation
 /// - A disk change never overwrites unsaved edits.
 @MainActor
 final class Document: ObservableObject {
-    /// The process-wide document. Not lazy-initialised state to be passed
-    /// around: the menu bar and the app delegate both need it before any view
-    /// exists.
-    static let shared = Document()
-
     /// Live text. The editor writes here; the preview reads `renderSource`.
     @Published var text: String = ""
 
@@ -49,11 +48,14 @@ final class Document: ObservableObject {
     /// The folder relative links and images resolve against; nil before any open.
     var directory: URL? { url?.deletingLastPathComponent() }
 
-    /// Wires `text` to `renderSource` through a debounce.
+    /// Whether this tab holds nothing anyone would mind losing.
     ///
-    /// Private: `shared` is the only instance, because a second one would mean a
-    /// second watcher on the same path.
-    private init() {
+    /// What `WindowRouter` consults before making a tab: a file is better off in
+    /// an empty tab than in a new one beside it.
+    var isUntouched: Bool { url == nil && text.isEmpty }
+
+    /// Wires `text` to `renderSource` through a debounce.
+    init() {
         $text
             .debounce(for: .milliseconds(110), scheduler: DispatchQueue.main)
             .assign(to: &$renderSource)
@@ -84,27 +86,6 @@ final class Document: ObservableObject {
                 status = "Couldn't open \(url.lastPathComponent): \(error.localizedDescription)"
             }
         }
-    }
-
-    /// Opens the first of several files, and says which one that was.
-    ///
-    /// Context shows one document at a time, so a request to open a set — Finder
-    /// with three files selected, or `open -a Context *.md` — can only be partly
-    /// honoured. Discarding the rest in silence is indistinguishable from failing
-    /// to open them, so the banner names the one that was taken.
-    ///
-    /// - Parameter urls: Candidates. Non-file URLs are ignored, and an empty list
-    ///   leaves the current document alone.
-    func open(_ urls: [URL]) {
-        let files = urls.filter(\.isFileURL)
-        guard let first = files.first else { return }
-        open(first)
-
-        // `open` clears the banner on success and writes to it on failure. Both
-        // are more specific than a count — including the Latin-1 fallback, which
-        // is worth more to the reader than knowing two files were skipped.
-        guard files.count > 1, url == first, status == nil else { return }
-        status = "Opened \(first.lastPathComponent) — Context shows one file at a time"
     }
 
     /// Installs decoded contents as the current document.

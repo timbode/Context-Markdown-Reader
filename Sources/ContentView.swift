@@ -11,11 +11,22 @@ enum Prefs {
     static let zoom = "zoom"
 }
 
-/// The window's contents: the editor pane, a draggable divider, and the reading
+/// One tab's contents: the editor pane, a draggable divider, and the reading
 /// pane, with a status banner floating over them.
+///
+/// The document and the find state are created here, so each tab has its own —
+/// a tab on macOS is a window, and this view is the whole of one.
 struct ContentView: View {
-    @ObservedObject private var doc = Document.shared
-    @ObservedObject private var find = FindModel.shared
+    /// The file this tab was opened for, or nil for an empty one.
+    ///
+    /// A binding rather than a value because it is also the tab's restoration
+    /// state: following a link inside the tab writes the new file back, so
+    /// relaunching reopens what you were actually reading.
+    @Binding var fileURL: URL?
+
+    @StateObject private var doc = Document()
+    @StateObject private var find = FindModel()
+    @Environment(\.openWindow) private var openWindow
     @AppStorage(Prefs.editorVisible) private var editorVisible = false
     @AppStorage(Prefs.editorWidth) private var editorWidth: Double = 400
     @AppStorage(Prefs.zoom) private var zoom: Double = 1.0
@@ -38,7 +49,7 @@ struct ContentView: View {
 
             divider
 
-            PreviewView(doc: doc, zoom: zoom)
+            PreviewView(doc: doc, find: find, zoom: zoom)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // Over the pane, not above it: the page's own top padding means
                 // the bar usually covers nothing, and giving it a row of its own
@@ -58,12 +69,39 @@ struct ContentView: View {
             window.title = doc.displayName
             window.representedURL = doc.url
             window.isDocumentEdited = doc.isDirty
+            // Idempotent past the first call: this is also where the tab joins
+            // its group, and where the router learns which window it is in.
+            WindowRouter.shared.attach(window, to: doc)
         })
         .dropDestination(for: URL.self) { urls, _ in
-            guard let url = urls.first, url.isFileURL else { return false }
-            doc.open(url)
+            // Through the router rather than straight into this tab: dropping
+            // three files should give three tabs, and dropping one onto a tab
+            // you are reading shouldn't replace it.
+            guard urls.contains(where: \.isFileURL) else { return false }
+            WindowRouter.shared.open(urls)
             return true
         }
+        // Both are scene values, so ⌘S and ⌘F reach the focused tab's document
+        // and search rather than a process-wide one.
+        .focusedSceneValue(\.document, doc)
+        .focusedSceneValue(\.find, find)
+        .onAppear {
+            WindowRouter.shared.adopt(doc, intending: fileURL)
+            WindowRouter.shared.register { url in
+                if let url {
+                    openWindow(id: ContextApp.documentScene, value: url)
+                } else {
+                    openWindow(id: ContextApp.documentScene)
+                }
+            }
+        }
+        .onDisappear { WindowRouter.shared.forget(doc) }
+        // Runs once per distinct value: at appear with whatever the tab was
+        // opened for, and again only if something rewrites the binding.
+        .task(id: fileURL) {
+            if let fileURL, doc.url != fileURL { doc.open(fileURL) }
+        }
+        .onChange(of: doc.url) { fileURL = doc.url }
     }
 
     /// The hairline between the panes, and the handle that resizes them.

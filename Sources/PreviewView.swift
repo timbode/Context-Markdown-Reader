@@ -12,12 +12,16 @@ import WebKit
 struct PreviewView: NSViewRepresentable {
     @ObservedObject var doc: Document
 
+    /// This tab's search. Held so the coordinator can rebuild the match list
+    /// after each render.
+    @ObservedObject var find: FindModel
+
     /// Page zoom, 1.0 being actual size.
     var zoom: Double
 
     /// - Returns: The object that outlives view updates and so can remember what
     ///   has already been rendered.
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(doc: doc, find: find) }
 
     /// Builds the webview and starts loading the bundled page.
     ///
@@ -39,9 +43,10 @@ struct PreviewView: NSViewRepresentable {
             allowingReadAccessTo: appDirectory
         )
 
-        // The one pane find searches. Set here rather than passed in, because the
-        // find bar is a sibling in the layout and never sees this view.
-        FindModel.shared.webView = webView
+        // The pane this tab's find searches. Set here rather than passed in,
+        // because the find bar is a sibling in the layout and never sees this
+        // view.
+        find.webView = webView
         return webView
     }
 
@@ -50,6 +55,8 @@ struct PreviewView: NSViewRepresentable {
     /// Called on every SwiftUI update, so both writes are guarded against
     /// no-op churn.
     func updateNSView(_ webView: WKWebView, context: Context) {
+        context.coordinator.doc = doc
+        context.coordinator.find = find
         if webView.pageZoom != zoom { webView.pageZoom = zoom }
         context.coordinator.render(doc.renderSource, from: doc.url, in: webView)
     }
@@ -61,6 +68,22 @@ struct PreviewView: NSViewRepresentable {
         /// custom scheme rather than `file://` because the page is loaded from
         /// the app bundle and must not be granted read access to the whole disk.
         static let scheme = "context-doc"
+
+        /// The document this pane is showing. Per-pane rather than shared,
+        /// because a relative link or image resolves against *this* tab's folder
+        /// — the same `images/plot.png` means different files in two tabs.
+        var doc: Document
+
+        /// This tab's search, refreshed after every render.
+        var find: FindModel
+
+        /// - Parameters:
+        ///   - doc: The document to render and resolve against.
+        ///   - find: The search to rebuild after each render.
+        init(doc: Document, find: FindModel) {
+            self.doc = doc
+            self.find = find
+        }
 
         private var isLoaded = false
         private var pending: String?
@@ -118,8 +141,9 @@ struct PreviewView: NSViewRepresentable {
             // A render replaces every node an active search was pointing at, so
             // the matches have to be found again. WebKit runs these scripts in
             // the order they were queued, so both see the new document.
-            MainActor.assumeIsolated { FindModel.shared.refresh() }
+            MainActor.assumeIsolated { find.refresh() }
             flushAnchor(in: webView)
+
         }
 
         /// Scrolls to the fragment a cross-file link was carrying, if any.
@@ -181,15 +205,14 @@ struct PreviewView: NSViewRepresentable {
             case Self.scheme:
                 // A relative link in the document. Markdown opens in Context;
                 // anything else is handed over only if opening it merely shows it.
-                if let resolved = Self.resolve(url) {
+                if let resolved = resolve(url) {
                     if Self.markdownExtensions.contains(resolved.pathExtension.lowercased()) {
-                        // `resolve` deals in file paths and drops the fragment, so
-                        // a link to a section of another file — the one link that
-                        // crosses documents — would land at the top without this.
-                        pendingAnchor = url.fragment
-                        MainActor.assumeIsolated { Document.shared.open(resolved) }
+                        let newTab = Self.isCommandHeld(during: navigationAction)
+                        MainActor.assumeIsolated {
+                            follow(resolved, fragment: url.fragment, inNewTab: newTab)
+                        }
                     } else {
-                        MainActor.assumeIsolated { Self.reveal(resolved) }
+                        MainActor.assumeIsolated { reveal(resolved) }
                     }
                 }
                 decisionHandler(.cancel)
@@ -204,6 +227,50 @@ struct PreviewView: NSViewRepresentable {
                 // disk through the window, and is refused.
                 decisionHandler(Self.isBundledPage(url) ? .allow : .cancel)
             }
+        }
+
+        /// Whether the click that caused a navigation was a ⌘-click.
+        ///
+        /// The obvious source, `WKNavigationAction.modifierFlags`, is empty.
+        /// Measured twice: with a real ⌘-click, which followed the link in place,
+        /// and with a synthetic `MouseEvent` carrying `metaKey`, which arrives as
+        /// `.linkActivated` with `modifierFlags` of 0 all the same. WebKit does
+        /// not route the click to `WKUIDelegate` either — that path is for
+        /// `window.open`, and it is never called here.
+        ///
+        /// So the keyboard is asked directly. This runs a moment after the mouse
+        /// went down, while the key that modified it is still held.
+        ///
+        /// - Parameter action: The navigation to judge. Its flags are still
+        ///   consulted, in case a WebKit version does fill them in.
+        /// - Returns: True if ⌘ was down.
+        static func isCommandHeld(during action: WKNavigationAction) -> Bool {
+            action.modifierFlags.union(NSEvent.modifierFlags).contains(.command)
+        }
+
+        /// Opens a Markdown link, in this tab or a new one.
+        ///
+        /// - Parameters:
+        ///   - url: The file the link resolved to.
+        ///   - fragment: The section it named, if any.
+        ///   - inNewTab: Whether the click carried ⌘, the browser gesture for
+        ///     "keep where I am".
+        /// - Note: A new tab drops the fragment. It is carried across a same-tab
+        ///   hop by `pendingAnchor`, which belongs to *this* pane and cannot
+        ///   reach a webview that does not exist yet; the tab opens at the top,
+        ///   as a new browser tab from a fragment link would not, but the file is
+        ///   the one that was asked for.
+        @MainActor
+        func follow(_ url: URL, fragment: String?, inNewTab: Bool) {
+            guard !inNewTab else {
+                WindowRouter.shared.open(url)
+                return
+            }
+            // `resolve` deals in file paths and drops the fragment, so a link to
+            // a section of another file — the one link that crosses documents —
+            // would land at the top without this.
+            pendingAnchor = fragment
+            doc.open(url)
         }
 
         /// Extensions a link may point at and still open in Context rather than
@@ -241,10 +308,11 @@ struct PreviewView: NSViewRepresentable {
         /// - Parameter url: A resolved local file.
         /// - Postcondition: Either the file is open in its owning app, or it is
         ///   selected in the Finder and the banner says why.
-        static func reveal(_ url: URL) {
+        @MainActor
+        func reveal(_ url: URL) {
             guard Self.isInert(url) else {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
-                Document.shared.note(
+                doc.note(
                     "Revealed \(url.lastPathComponent) in the Finder — Context doesn't run files"
                 )
                 return
@@ -303,8 +371,8 @@ struct PreviewView: NSViewRepresentable {
         ///
         /// - Parameter url: A URL in the custom scheme.
         /// - Returns: The file URL it denotes, or nil if the path is empty or no
-        ///   document is open to resolve against.
-        static func resolve(_ url: URL) -> URL? {
+        ///   document is open in *this* tab to resolve against.
+        func resolve(_ url: URL) -> URL? {
             let path = (url.path.removingPercentEncoding ?? url.path)
                 .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             guard !path.isEmpty else { return nil }
@@ -313,9 +381,17 @@ struct PreviewView: NSViewRepresentable {
             case "abs":
                 return URL(fileURLWithPath: "/" + path)
             default:
-                guard let directory = MainActor.assumeIsolated({ Document.shared.directory })
+                guard let directory = MainActor.assumeIsolated({ doc.directory })
                 else { return nil }
-                return URL(fileURLWithPath: path, relativeTo: directory).standardizedFileURL
+                // `.absoluteURL` folds the base in, so what a tab reports as its
+                // file is a plain path rather than one carrying a base — which is
+                // what gets written back to the window's scene value and shown as
+                // the proxy icon. It is *not* enough to make two spellings of one
+                // file compare equal: `WindowRouter.isSameFile` does that, and
+                // has to, because `==` says false here even after this.
+                return URL(fileURLWithPath: path, relativeTo: directory)
+                    .standardizedFileURL
+                    .absoluteURL
             }
         }
 
@@ -326,7 +402,7 @@ struct PreviewView: NSViewRepresentable {
         ///   with `NSURLErrorFileDoesNotExist` if it cannot be resolved or read.
         func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
             guard let requested = urlSchemeTask.request.url,
-                  let fileURL = Self.resolve(requested),
+                  let fileURL = resolve(requested),
                   let data = try? Data(contentsOf: fileURL) else {
                 urlSchemeTask.didFailWithError(
                     NSError(domain: NSURLErrorDomain, code: NSURLErrorFileDoesNotExist)
