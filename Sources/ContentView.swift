@@ -86,7 +86,7 @@ struct ContentView: View {
         .focusedSceneValue(\.document, doc)
         .focusedSceneValue(\.find, find)
         .onAppear {
-            WindowRouter.shared.adopt(doc)
+            WindowRouter.shared.adopt(doc, intending: fileURL)
             WindowRouter.shared.register { url in
                 if let url {
                     openWindow(id: ContextApp.documentScene, value: url)

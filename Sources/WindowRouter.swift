@@ -33,6 +33,18 @@ final class WindowRouter {
     private struct Tab {
         weak var document: Document?
         weak var window: NSWindow?
+
+        /// The file this tab was opened for, known from the moment it appears —
+        /// before its document has read anything.
+        var intended: URL?
+
+        /// What the tab is showing, or is about to.
+        ///
+        /// Asking the document alone is not enough at launch: a restored tab
+        /// exists, and is empty, for the moment between appearing and loading
+        /// its file. A tab judged on that would be mistaken for a free one, or
+        /// for a different file than it is about to become.
+        @MainActor var file: URL? { document?.url ?? intended }
     }
 
     private var tabs: [Tab] = []
@@ -41,11 +53,16 @@ final class WindowRouter {
     /// the first window has appeared and registered its `openWindow`.
     private var makeWindow: ((URL?) -> Void)?
 
-    /// Files asked for before there was anything to open them with.
+    /// Files asked for before they could be answered — during launch, or before
+    /// any window existed to make more from.
     ///
-    /// Launching by double-clicking a document lands here: the app delegate is
-    /// called before SwiftUI has built a scene.
+    /// Launching by double-clicking a document lands here.
     private var deferred: [URL] = []
+
+    /// True until the launch has finished bringing back whatever it is going to.
+    ///
+    /// Cleared by `settleAfterLaunch()`, which the app delegate schedules.
+    private var isSettling = true
 
     /// The window a newly made one should join, remembered from the moment it was
     /// asked for.
@@ -66,19 +83,21 @@ final class WindowRouter {
     ///   the point is only that at least one is live.
     func register(_ make: @escaping (URL?) -> Void) {
         makeWindow = make
-        guard !deferred.isEmpty else { return }
-        let pending = deferred
-        deferred = []
-        pending.forEach(open)
+        flushDeferred()
     }
 
     /// Enters a document in the register, before its window exists.
     ///
-    /// - Parameter document: The new tab's document.
-    func adopt(_ document: Document) {
+    /// - Parameters:
+    ///   - document: The new tab's document.
+    ///   - url: The file the tab was opened for, or nil for an empty one.
+    ///     Recorded now rather than waited for: at launch this is the only thing
+    ///     that tells a restored tab from a free one, since the document behind
+    ///     it has not read its file yet.
+    func adopt(_ document: Document, intending url: URL?) {
         prune()
         guard !tabs.contains(where: { $0.document === document }) else { return }
-        tabs.append(Tab(document: document, window: nil))
+        tabs.append(Tab(document: document, window: nil, intended: url))
     }
 
     /// Completes a register entry with the window its document ended up in, and
@@ -127,12 +146,21 @@ final class WindowRouter {
     /// - Postcondition: Exactly one tab is showing `url`, and it is the frontmost
     ///   one.
     func open(_ url: URL) {
+        // A request arriving during launch cannot be answered yet: restoration
+        // is still bringing tabs back, so "is this one already open?" has no
+        // answer. Guessing costs a second tab on a file that was about to
+        // reappear — measured, and only for the file whose restored tab happened
+        // to come back last.
+        guard !isSettling else {
+            deferred.append(url)
+            return
+        }
         prune()
 
         // Already open. Two tabs on one file would be two watchers on one path
         // and two answers to whether it has unsaved edits, so this raises the
         // tab that has it instead of making a second.
-        if let tab = tabs.first(where: { Self.isSameFile($0.document?.url, url) }) {
+        if let tab = tabs.first(where: { Self.isSameFile($0.file, url) }) {
             raise(tab)
             return
         }
@@ -194,7 +222,22 @@ final class WindowRouter {
     /// One empty tab survives if there is nothing else, since an app with no
     /// window is an app with nothing on screen. Only launch needs any of this:
     /// after it, an empty tab is one somebody asked for with ⌘T.
-    func tidyRestoredTabs() {
+    func settleAfterLaunch() {
+        isSettling = false
+        tidyRestoredTabs()
+        flushDeferred()
+    }
+
+    /// Answers whatever was asked for before it could be.
+    private func flushDeferred() {
+        guard !isSettling, makeWindow != nil, !deferred.isEmpty else { return }
+        let pending = deferred
+        deferred = []
+        pending.forEach(open)
+    }
+
+    /// Closes the tabs a restore leaves behind that nothing would have made.
+    private func tidyRestoredTabs() {
         prune()
 
         var seen: [URL] = []
@@ -202,7 +245,7 @@ final class WindowRouter {
         var empty: [Tab] = []
 
         for tab in tabs {
-            guard let url = tab.document?.url else {
+            guard let url = tab.file else {
                 empty.append(tab)
                 continue
             }
@@ -227,12 +270,14 @@ final class WindowRouter {
     ///   otherwise nil. The key window comes first so that ⌘O in an untouched
     ///   window fills the one you are looking at.
     private func untouched() -> Tab? {
-        if let key = NSApp.keyWindow,
-           let tab = tabs.first(where: { $0.window === key }),
-           tab.document?.isUntouched == true {
+        // `intended` has to be nil too: a restored tab that has not loaded yet
+        // looks empty, and filling it would put a file in a tab that is about to
+        // replace it with its own.
+        let isFree = { (tab: Tab) in tab.intended == nil && tab.document?.isUntouched == true }
+        if let key = NSApp.keyWindow, let tab = tabs.first(where: { $0.window === key }), isFree(tab) {
             return tab
         }
-        return tabs.first { $0.document?.isUntouched == true }
+        return tabs.first(where: isFree)
     }
 
     /// Brings a tab to the front of its group and gives it the keyboard.

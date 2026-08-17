@@ -193,29 +193,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
 
-        // Restored windows appear after this method returns, and there is no
-        // notification for "restoration is done" — hence a short wait rather
-        // than a hook. It only has to outlast SwiftUI building the scene.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            MainActor.assumeIsolated { WindowRouter.shared.tidyRestoredTabs() }
+        // All of this has to wait out the launch, and none of it has a hook to
+        // wait on: restored windows appear after this method returns, the
+        // launch's own open-documents event has not been delivered yet, and
+        // until both have happened the router cannot tell whether a file it is
+        // asked for is one that is about to come back on its own.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.launchSettles) {
+            MainActor.assumeIsolated {
+                WindowRouter.shared.settleAfterLaunch()
+                self.takeOverOpenDocuments()
+            }
         }
     }
 
-    /// Takes over the open-documents Apple Event before AppKit's own handler is
-    /// used.
+    /// How long to let a launch settle before touching what it built.
+    ///
+    /// Long enough that restored tabs have loaded their files — measured at
+    /// around a tenth of this — and that the launch's own document event has
+    /// been delivered and answered.
+    private static let launchSettles: TimeInterval = 1.0
+
+    /// Takes the open-documents Apple Event away from AppKit, *after* launch.
     ///
     /// Finder double-clicks and `open -a Context file.md` arrive as this event.
     /// Left to the default handler, SwiftUI answers it by opening the window
     /// group's *default* window — an empty one, since it has no way to turn a
     /// file into the group's `URL` value — and only then calls
-    /// `application(_:open:)`, which opens the file properly. The result is one
-    /// stray blank tab per file opened. Measured, not guessed: the blank window
-    /// is adopted before the delegate method runs at all.
+    /// `application(_:open:)`, which opens the file properly. The stray blank tab
+    /// that leaves behind is what this avoids. Measured, not guessed: the blank
+    /// window is adopted before the delegate method runs at all.
     ///
-    /// Registering here replaces that handler, so the event reaches only this
-    /// method. `willFinishLaunching` is the moment for it: AppKit has installed
-    /// its handlers by then, and no event has been delivered yet.
-    func applicationWillFinishLaunching(_ notification: Notification) {
+    /// **The timing is the whole point.** Registering this before launch — the
+    /// obvious place, and where it was first put — breaks opening a file by
+    /// double-clicking it while Context is closed. On a launch driven by
+    /// documents SwiftUI does not open its default window at all: it expects the
+    /// document handler to make the windows. Take the event away and there is
+    /// never a window, so `WindowRouter` never gets an `openWindow` to call and
+    /// the file waits in `deferred` forever. The app comes up with nothing on
+    /// screen and no way to say why.
+    ///
+    /// So the launch keeps AppKit's handler, which opens a blank window that
+    /// `application(_:open:)` then fills — the stray costs nothing when there is
+    /// nothing else on screen — and everything after it comes here.
+    private func takeOverOpenDocuments() {
         NSAppleEventManager.shared().setEventHandler(
             self,
             andSelector: #selector(handleOpenDocuments(_:withReply:)),
@@ -226,12 +246,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Opens every file the event names, each in a tab.
     ///
+    /// Replaces `application(_:open:)` once `takeOverOpenDocuments()` has run;
+    /// both route to the same place, and a file that somehow reached both would
+    /// simply be raised the second time.
+    ///
     /// - Parameters:
     ///   - event: An `odoc` event; its direct object is a file or a list of them.
     ///   - reply: Unused — there is nothing to say back.
     @objc func handleOpenDocuments(_ event: NSAppleEventDescriptor, withReply reply: NSAppleEventDescriptor) {
         guard let object = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject)) else { return }
-        let urls = Self.fileURLs(in: object)
+        MainActor.assumeIsolated { WindowRouter.shared.open(Self.fileURLs(in: object)) }
+    }
+
+    /// The launch's own documents, and any that arrive before the handler above
+    /// is installed.
+    ///
+    /// - Parameter urls: Candidates from the system, each of which gets a tab.
+    func application(_ application: NSApplication, open urls: [URL]) {
         MainActor.assumeIsolated { WindowRouter.shared.open(urls) }
     }
 

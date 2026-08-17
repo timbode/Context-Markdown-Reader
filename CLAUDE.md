@@ -273,12 +273,32 @@ three of them were bugs first.
 
 - **`WKNavigationAction.modifierFlags` is empty.** A ⌘-click arrives as a plain
   `.linkActivated` with flags of 0, so the documented way to implement
-  open-in-new-tab silently does nothing. Measured twice — with a real ⌘-click,
-  and with a synthetic `MouseEvent` carrying `metaKey`, which WebKit reports the
-  same way. It does not go to `WKUIDelegate` either; `createWebViewWith` is for
-  `window.open` and is never called. `isCommandHeld(during:)` therefore asks the
-  keyboard with `NSEvent.modifierFlags`, which is still true a moment after the
-  mouse-up.
+  open-in-new-tab silently does nothing. Measured with a synthetic `MouseEvent`
+  carrying `metaKey`. It does not go to `WKUIDelegate` either;
+  `createWebViewWith` is for `window.open` and is never called.
+  `isCommandHeld(during:)` therefore consults both the action's flags and
+  `NSEvent.modifierFlags`, the second being the keyboard itself, still true a
+  moment after the mouse-up.
+
+- **Nothing opens at all if the Apple Event is taken over too early.** On a
+  launch driven by documents — double-clicking a `.md` while Context is closed —
+  SwiftUI does not open its default window: it expects the document handler to
+  make the windows. Take the event away in `applicationWillFinishLaunching` and
+  there is never a window, so nothing ever hands `WindowRouter` an `openWindow`
+  to call, and the file sits in `deferred` forever behind an app with an empty
+  screen. Hence `takeOverOpenDocuments()` runs a second *after* launch: the
+  launch itself keeps AppKit's handler, and its one stray blank tab is swept by
+  the same timer.
+
+- **A file asked for during launch cannot be answered during launch.** "Is this
+  one already open?" has no answer while restoration is still bringing tabs back,
+  and answering it anyway costs a second tab on a file that was about to
+  reappear. The symptom is horrible to chase, because it strikes only the file
+  whose restored tab happens to come back *last* — four files out of five look
+  fine. So `WindowRouter` queues every request until `settleAfterLaunch()`, and a
+  tab is registered with the file it is *going to* show (`Tab.intended`) rather
+  than only the one it has already read: a restored tab is empty for the moment
+  between appearing and loading, and would otherwise be taken for a free one.
 
 Watch out for one more thing across all of this: **`==` on two file URLs is not
 "same file"**. A link resolved against the document's folder compares unequal to
@@ -293,6 +313,15 @@ in `~/Library/Saved Application State` (no such directory on this machine), not
 in the preferences plist, not in the recent-documents `.sfl3`. To test a
 first-ever launch, build with a different `BUNDLE_ID` — that is the only reliable
 clean slate.
+
+**Test the app the way it is launched.** Running
+`build/Context.app/Contents/MacOS/Context` by hand and then sending it files with
+`open -a` exercises a different path from double-clicking a document with the app
+closed — and the second one was broken for a day while every test passed, because
+no test ever cold-launched it. `open -a <bundle> <file>` with nothing running is
+the case that matters. Check `/Applications/Context.app`'s date before believing
+a report about behaviour, too: an installed copy is what gets clicked, and
+`build.sh` does not update it.
 
 Testing any of this from a terminal session needs a trick, because System Events
 is refused (`osascript is not allowed assistive access`) and so window counts and
