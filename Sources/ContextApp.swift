@@ -185,7 +185,7 @@ extension FocusedValues {
 /// Handles the parts of the app lifecycle SwiftUI does not expose: files opened
 /// from outside the process, and what closing the last tab means.
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    /// Turns on window tabbing, and clears the empty tabs a restore leaves.
+    /// Turns on window tabbing, and clears the stray tabs a restore leaves.
     ///
     /// Tabbing is on by default, but the whole shape of the app depends on it —
     /// and on a machine where the system-wide preference is "never", this is what
@@ -197,7 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // notification for "restoration is done" — hence a short wait rather
         // than a hook. It only has to outlast SwiftUI building the scene.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            MainActor.assumeIsolated { WindowRouter.shared.collapseEmptyTabs() }
+            MainActor.assumeIsolated { WindowRouter.shared.tidyRestoredTabs() }
         }
     }
 

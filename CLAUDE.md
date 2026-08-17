@@ -266,8 +266,27 @@ three of them were bugs first.
 - **A restore brings back the group's windows *and* opens the default one**, so
   a session that ended with an empty tab comes back with two, and the count
   climbs by one per launch. Nothing distinguishes a restored window from a fresh
-  one, hence `collapseEmptyTabs()` on a short delay after launch — a timer
-  because there is no "restoration finished" hook.
+  one, hence `tidyRestoredTabs()` on a short delay after launch — a timer
+  because there is no "restoration finished" hook. It also drops duplicate tabs
+  on one file: nothing can *make* one, but a session that once had one restores
+  it for good, with two watchers on a single path.
+
+- **`WKNavigationAction.modifierFlags` is empty.** A ⌘-click arrives as a plain
+  `.linkActivated` with flags of 0, so the documented way to implement
+  open-in-new-tab silently does nothing. Measured twice — with a real ⌘-click,
+  and with a synthetic `MouseEvent` carrying `metaKey`, which WebKit reports the
+  same way. It does not go to `WKUIDelegate` either; `createWebViewWith` is for
+  `window.open` and is never called. `isCommandHeld(during:)` therefore asks the
+  keyboard with `NSEvent.modifierFlags`, which is still true a moment after the
+  mouse-up.
+
+Watch out for one more thing across all of this: **`==` on two file URLs is not
+"same file"**. A link resolved against the document's folder compares unequal to
+the same path from the Finder even after `.standardizedFileURL.absoluteURL`, and
+`/tmp` and `/private/tmp` spell one file two ways. Measured, and it was a real
+bug: a ⌘-clicked link opened a second tab on a document already in one.
+`WindowRouter.isSameFile` normalises with `resolvingSymlinksInPath()`, and is
+what every "is this already open?" question has to go through.
 
 Where that restoration state lives is worth knowing you *cannot* find: it is not
 in `~/Library/Saved Application State` (no such directory on this machine), not

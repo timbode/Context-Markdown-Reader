@@ -143,6 +143,7 @@ struct PreviewView: NSViewRepresentable {
             // the order they were queued, so both see the new document.
             MainActor.assumeIsolated { find.refresh() }
             flushAnchor(in: webView)
+
         }
 
         /// Scrolls to the fragment a cross-file link was carrying, if any.
@@ -206,7 +207,7 @@ struct PreviewView: NSViewRepresentable {
                 // anything else is handed over only if opening it merely shows it.
                 if let resolved = resolve(url) {
                     if Self.markdownExtensions.contains(resolved.pathExtension.lowercased()) {
-                        let newTab = navigationAction.modifierFlags.contains(.command)
+                        let newTab = Self.isCommandHeld(during: navigationAction)
                         MainActor.assumeIsolated {
                             follow(resolved, fragment: url.fragment, inNewTab: newTab)
                         }
@@ -226,6 +227,25 @@ struct PreviewView: NSViewRepresentable {
                 // disk through the window, and is refused.
                 decisionHandler(Self.isBundledPage(url) ? .allow : .cancel)
             }
+        }
+
+        /// Whether the click that caused a navigation was a ⌘-click.
+        ///
+        /// The obvious source, `WKNavigationAction.modifierFlags`, is empty.
+        /// Measured twice: with a real ⌘-click, which followed the link in place,
+        /// and with a synthetic `MouseEvent` carrying `metaKey`, which arrives as
+        /// `.linkActivated` with `modifierFlags` of 0 all the same. WebKit does
+        /// not route the click to `WKUIDelegate` either — that path is for
+        /// `window.open`, and it is never called here.
+        ///
+        /// So the keyboard is asked directly. This runs a moment after the mouse
+        /// went down, while the key that modified it is still held.
+        ///
+        /// - Parameter action: The navigation to judge. Its flags are still
+        ///   consulted, in case a WebKit version does fill them in.
+        /// - Returns: True if ⌘ was down.
+        static func isCommandHeld(during action: WKNavigationAction) -> Bool {
+            action.modifierFlags.union(NSEvent.modifierFlags).contains(.command)
         }
 
         /// Opens a Markdown link, in this tab or a new one.
@@ -363,7 +383,15 @@ struct PreviewView: NSViewRepresentable {
             default:
                 guard let directory = MainActor.assumeIsolated({ doc.directory })
                 else { return nil }
-                return URL(fileURLWithPath: path, relativeTo: directory).standardizedFileURL
+                // `.absoluteURL` folds the base in, so what a tab reports as its
+                // file is a plain path rather than one carrying a base — which is
+                // what gets written back to the window's scene value and shown as
+                // the proxy icon. It is *not* enough to make two spellings of one
+                // file compare equal: `WindowRouter.isSameFile` does that, and
+                // has to, because `==` says false here even after this.
+                return URL(fileURLWithPath: path, relativeTo: directory)
+                    .standardizedFileURL
+                    .absoluteURL
             }
         }
 

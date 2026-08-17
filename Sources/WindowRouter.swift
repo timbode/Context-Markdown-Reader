@@ -132,7 +132,7 @@ final class WindowRouter {
         // Already open. Two tabs on one file would be two watchers on one path
         // and two answers to whether it has unsaved edits, so this raises the
         // tab that has it instead of making a second.
-        if let tab = tabs.first(where: { $0.document?.url == url }) {
+        if let tab = tabs.first(where: { Self.isSameFile($0.document?.url, url) }) {
             raise(tab)
             return
         }
@@ -175,23 +175,48 @@ final class WindowRouter {
         makeWindow?(nil)
     }
 
-    /// Closes empty tabs left over from a restored session.
+    /// Closes the tabs a restore leaves behind that nothing would have made.
     ///
-    /// SwiftUI brings back the windows the group had at quit *and* opens the
-    /// group's default one, so a session that ended with an empty tab comes back
-    /// with two — and the count climbs by one on every launch. Nothing in the
-    /// scene model tells a restored window from a fresh one, so the sweep runs
-    /// once, shortly after launch, by which time every restored tab has loaded
-    /// its file and an empty tab is empty because it has nothing to show.
+    /// Two kinds, and both accumulate silently across launches:
+    ///
+    /// - **Empty ones.** SwiftUI brings back the windows the group had at quit
+    ///   *and* opens the group's default one, so a session that ended with an
+    ///   empty tab comes back with two, and the count climbs by one every launch.
+    /// - **Duplicates.** Nothing else can make a second tab on one file —
+    ///   `open(_:)` raises the tab that has it — but a session that once did
+    ///   comes back that way for good, with two watchers on one path.
+    ///
+    /// Nothing in the scene model tells a restored window from a fresh one, so
+    /// this runs once, shortly after launch, when every restored tab has loaded
+    /// its file. A restored tab has no unsaved edits to lose: it was read from
+    /// disk moments earlier.
     ///
     /// One empty tab survives if there is nothing else, since an app with no
-    /// window is an app with nothing on screen. Only launch needs this: after it,
-    /// an empty tab is one somebody asked for with ⌘T.
-    func collapseEmptyTabs() {
+    /// window is an app with nothing on screen. Only launch needs any of this:
+    /// after it, an empty tab is one somebody asked for with ⌘T.
+    func tidyRestoredTabs() {
         prune()
-        let empty = tabs.filter { $0.document?.isUntouched == true }
-        let spare = empty.count == tabs.count ? 1 : 0
-        for tab in empty.dropFirst(spare) { tab.window?.close() }
+
+        var seen: [URL] = []
+        var doomed: [Tab] = []
+        var empty: [Tab] = []
+
+        for tab in tabs {
+            guard let url = tab.document?.url else {
+                empty.append(tab)
+                continue
+            }
+            if seen.contains(where: { Self.isSameFile($0, url) }) {
+                doomed.append(tab)
+            } else {
+                seen.append(url)
+            }
+        }
+
+        // Keep an empty tab only when it would otherwise be an empty screen.
+        let spare = seen.isEmpty ? 1 : 0
+        doomed.append(contentsOf: empty.dropFirst(spare))
+        for tab in doomed { tab.window?.close() }
     }
 
     // MARK: - Register upkeep
@@ -220,6 +245,23 @@ final class WindowRouter {
         // behind another tab raises the group, not necessarily this member.
         window.tabGroup?.selectedWindow = window
         window.makeKeyAndOrderFront(nil)
+    }
+
+    /// Whether two URLs name the same file on disk.
+    ///
+    /// `==` is not that question. A link resolved against the document's folder,
+    /// a path from the Finder and one typed with a symlink in it can all reach
+    /// one file and compare unequal — and each mismatch is a second tab on a
+    /// document that is already open, with a second watcher on the same path.
+    ///
+    /// - Parameters:
+    ///   - lhs: A candidate, or nil for a tab with nothing open.
+    ///   - rhs: The file being asked for.
+    /// - Returns: True only if both name one file.
+    private static func isSameFile(_ lhs: URL?, _ rhs: URL) -> Bool {
+        guard let lhs else { return false }
+        return lhs.standardizedFileURL.resolvingSymlinksInPath()
+            == rhs.standardizedFileURL.resolvingSymlinksInPath()
     }
 
     /// Drops entries whose document has been deallocated.
