@@ -65,7 +65,9 @@ it is the shorter road if you have the tools already.
 
 | | |
 |---|---|
+| `⌘T` | New tab |
 | `⌘O` | Open a file (or drop one on the window) |
+| `⇧⌘[` `⇧⌘]` | Previous / next tab |
 | `⌘E` | Show/hide the editor pane |
 | `⌘F` | Find — the reading pane, or the editor if you are typing in it |
 | `⌘G` `⇧⌘G` | Next / previous match |
@@ -87,7 +89,11 @@ it is the shorter road if you have the tools already.
   Unsaved edits in Context's own editor are never overwritten by a disk change.
 - **Relative links and images** resolve against the document's folder; a
   relative link to another `.md` opens it in Context — at the right section if
-  the link names one — and everything else goes to whichever app owns it.
+  the link names one, or in a new tab if you ⌘-click it — and everything else
+  goes to whichever app owns it.
+- **Tabs**, the ordinary macOS kind: every file you open gets one, a file that is
+  already open comes forward instead of opening twice, and a tab drags out into a
+  window of its own. Reopening brings back the tabs you had.
 - **Links within the page** work as they do in a browser: a link to a heading,
   and a footnote and its way back.
 
@@ -142,7 +148,5 @@ binary you distribute.
 
 ## Not yet
 
-Single window, one document at a time — open several and Context takes the first
-and tells you so. No outline sidebar, no PDF export, no scroll sync between the
-panes. Find is plain text — no regular expressions, no case-sensitive or
-whole-word toggle.
+No outline sidebar, no PDF export, no scroll sync between the panes. Find is
+plain text — no regular expressions, no case-sensitive or whole-word toggle.
