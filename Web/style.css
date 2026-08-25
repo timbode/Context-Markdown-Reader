@@ -10,6 +10,9 @@
   --measure: 41rem;
   --pad-x: 1.75rem;
   --pad-y: 4.5rem;
+  /* Depth kept clear under a block that scrolls sideways, for the bar that
+     lands there; see `.scroll-lane`. */
+  --scroll-lane: 1.25rem;
 
   /* Warm paper, ink that stops short of pure black. */
   --bg: #faf9f7;
@@ -142,6 +145,32 @@ body {
 
 body.empty #doc { display: none; }
 
+/* ── Sideways scroll ─────────────────────────────────────────────────────
+   A horizontal scrollbar costs the block it belongs to the bottom 15px of its
+   scrollport, whichever kind macOS is showing: the overlay bar is painted over
+   what is there, and the classic one clips it instead — measured, and the
+   damage looks identical. On a block one line tall, what is there is the line.
+
+   So a block that actually scrolls — `preview-entry.js` marks those, since
+   padding out the ones that fit would cost every code block the depth — keeps a
+   lane clear for the bar. Display maths and tables had almost no padding of
+   their own and were the worst of it: a formula lost the limits under its sums.
+
+   The depth comes back out of the margin below, so a block that happens to
+   scroll does not shift the page's rhythm; margins do not collapse in this
+   grid, so the two numbers simply add. */
+
+#doc pre.scroll-lane { padding-bottom: var(--scroll-lane); }
+#doc .table-scroll.scroll-lane { padding-bottom: var(--scroll-lane); }
+#doc section.scroll-lane:has(> eqn) { padding-bottom: var(--scroll-lane); }
+
+/* Only the blocks sitting directly in the document give the depth back — a
+   nested one is inside a list or a quote, whose own last-child rules own the
+   space below it. Each adds back the padding it already had. */
+#doc > pre.scroll-lane { margin-bottom: calc(1.15em - var(--scroll-lane) + 0.95rem); }
+#doc > .table-scroll.scroll-lane { margin-bottom: calc(1.4em - var(--scroll-lane)); }
+#doc > section.scroll-lane:has(> eqn) { margin-bottom: calc(1.5em - var(--scroll-lane) + 0.35em); }
+
 /* ── Prose ───────────────────────────────────────────────────────────── */
 
 p, ul, ol, blockquote, dl, pre, table, section, hr, figure {
@@ -171,6 +200,7 @@ h1, h2, h3, h4, h5, h6 {
 #doc [id] { scroll-margin-top: 1.75rem; }
 
 h1 { font-size: 2.05em; letter-spacing: -0.028em; margin-top: 0; }
+
 h2 { font-size: 1.5em; }
 h3 { font-size: 1.2em; }
 h4 { font-size: 1.02em; }

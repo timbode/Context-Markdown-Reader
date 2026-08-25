@@ -149,6 +149,31 @@ numbers against each other.
 Measure rather than eyeball: render with `Tools/Snapshot.swift` and scan the PNG
 for rows containing ink; the gaps between those bands are the real numbers.
 
+## A horizontal scrollbar costs a block the bottom 15px of itself
+
+Not the 15px *below* it: an overlay bar is painted inside the scrollport, over
+whatever is there, and a classic one clips the same band instead. Measured both
+ways — the damage is identical, so there is no scrollbar-style probe worth
+writing, and an early version that gated on one was wrong. On a block a line or
+two tall, the band is the text.
+
+Display maths and tables were the worst of it: `section:has(> eqn)` carried
+0.35em of padding and `.table-scroll` none, so a one-line formula lost the
+limits under its sums the moment it scrolled. `pre` had 0.95rem and mostly got
+away with it. `preview-entry.js` now marks the blocks that actually overflow
+(`.scroll-lane`) and the stylesheet keeps `--scroll-lane` clear at the bottom of
+each; the depth is taken back out of the margin below, so a block that happens
+to scroll does not move the page. Marking is redone from a `ResizeObserver` on
+`#doc` — width only, since the class changes the height and would otherwise
+wake the observer for as long as WebKit tolerates.
+
+None of this shows in a snapshot: an idle overlay scrollbar paints nothing. To
+see one, copy the app's `app` directory, append `::-webkit-scrollbar { height:
+15px; background: … }` to the copy's `style.css` and snapshot *that* — styling
+the pseudo-element forces WebKit's classic, space-taking bar and makes the band
+visible. Colouring the boxes themselves (`section`, `.katex-display`) the same
+way is how the ink was told apart from the padding.
+
 ## Two kinds of link, and only one of them is a navigation
 
 `[x](#heading)` really navigates: WebKit scrolls it, and `decidePolicyFor` only
@@ -341,6 +366,7 @@ without a probe, though the descriptors lag a closed tab by a few seconds. And
 
 Beware `: > log` while the process holds the file open: the offset survives, so
 grep sees a binary hole and prints nothing.
+
 
 ## Why the panes never branch on `editorVisible`
 

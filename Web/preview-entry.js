@@ -113,6 +113,23 @@ function wrapTables(root) {
 }
 
 /**
+ * Marks the blocks that need a lane kept clear for a scrollbar.
+ *
+ * Measured rather than given to every code block, because the lane only pays
+ * for itself where there is a bar: what reads badly is a block one or two lines
+ * tall, where the bar lands on the text. See the stylesheet for what the class
+ * buys.
+ *
+ * @param {HTMLElement} root - The rendered document. Mutated in place.
+ */
+function markScrollers(root) {
+  for (const el of root.querySelectorAll('pre, .table-scroll, section')) {
+    // A rounding of a fraction of a pixel is not an overflow.
+    el.classList.toggle('scroll-lane', el.scrollWidth - el.clientWidth > 1)
+  }
+}
+
+/**
  * Gives every heading a slug id.
  *
  * Stable ids so in-document links and future outline work have something to
@@ -189,6 +206,23 @@ function decodeBase64Utf8(b64) {
   return new TextDecoder('utf-8').decode(bytes)
 }
 
+// What overflows depends on how wide the pane is, so the marking has to be
+// redone whenever that changes — dragging the split, resizing the window, or
+// zooming, which alters the viewport in CSS pixels. Observing #doc catches all
+// three. KaTeX's fonts also arrive after the layout that first asks for them
+// and change the width of every formula, so each batch is worth another pass.
+let lastWidth = 0
+new ResizeObserver(entries => {
+  // Width only: the marking changes the *height* of what it marks, so reacting
+  // to that would have the observer wake itself for as long as WebKit tolerates.
+  const width = entries[0].contentRect.width
+  if (width === lastWidth) return
+  lastWidth = width
+  markScrollers(doc())
+}).observe(doc())
+document.fonts?.addEventListener('loadingdone', () => markScrollers(doc()))
+
+
 /** The surface the Swift side drives. Nothing else is exported. */
 window.Context = {
   /**
@@ -215,6 +249,9 @@ window.Context = {
     addHeadingIds(el)
     localizeURLs(el)
     document.body.classList.toggle('empty', src.trim() === '')
+    // After the empty state, not before: an empty document hides #doc, and
+    // nothing inside something display:none can be measured.
+    markScrollers(el)
 
     document.documentElement.scrollTop = scroll
   },
