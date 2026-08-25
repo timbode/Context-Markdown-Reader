@@ -7,7 +7,7 @@
   --font-ui: ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 
-  --measure: 38rem;
+  --measure: 41rem;
   --pad-x: 1.75rem;
   --pad-y: 4.5rem;
 
@@ -126,9 +126,9 @@ body {
   display: grid;
   grid-template-columns:
     [full-start] minmax(var(--pad-x), 1fr)
-    [wide-start] minmax(0, 3.5rem)
+    [wide-start] minmax(0, 2.75rem)
     [text-start] min(var(--measure), 100%) [text-end]
-    minmax(0, 3.5rem) [wide-end]
+    minmax(0, 2.75rem) [wide-end]
     minmax(var(--pad-x), 1fr) [full-end];
   padding: var(--pad-y) 0 8rem;
 }

@@ -381,6 +381,11 @@ message says so.
   `@font-face` stacks and WebKit never asks for them. Saves ~3.8 MB.
 - Markdown is passed to JS base64-encoded so no escaping games are needed
   across the `evaluateJavaScript` bridge.
+- **The prose measure and the code track are one dial, not two.** The wide track
+  is `--measure` plus the two gutters either side of it, so widening the prose
+  widens the code blocks by the same amount and the two look exactly as they did
+  before. Changing how they *relate* means moving the gutter in the opposite
+  direction — which is what 41rem/2.75rem is: prose up ~8%, code up ~3%.
 - Type is entirely system-supplied (`ui-serif` → New York, `ui-sans-serif` →
   SF Pro, `ui-monospace` → SF Mono). Nothing is bundled or downloaded. Verified
   rendering correctly inside WKWebView.
