@@ -134,6 +134,72 @@ Ranges point at nodes, so **every render invalidates them**. `PreviewView.push`
 calls `FindModel.refresh()` right after `renderBase64`; WebKit runs the two in
 the order they were queued.
 
+## Folding lives outside the DOM, and find has to know about it
+
+A heading owns everything after it until the next heading of its level or
+higher, and `Web/outline.js` hides that run with the `hidden` attribute — no
+wrapper element, so the grid still sees the same children it always did.
+
+Which headings are folded is held in a `Set` in the module, **not** in the
+document, because every render replaces every element: a save, or a keystroke in
+the editor, would otherwise open everything the reader had folded. The set is
+kept on the same test the scroll position uses (`keepScroll`, i.e. same file)
+and cleared when a different document arrives, since a slug from one file means
+nothing in the next. Ids are the key, so editing a heading's text drops its fold
+— cheap, and the alternative is an index that a reordered document invalidates
+just as silently.
+
+`apply` recomputes every row from that set in one pass, rather than toggling
+what was clicked: a heading folded *inside* another fold has to come back
+folded when the outer one opens, and a stack of levels gives that for free.
+
+Two things reach into a fold and must open it:
+
+- **Find matches text it cannot see.** `find.js` deliberately indexes the whole
+  document — the fold hides the page, not the document — so `reveal` opens the
+  chain of headings above a match before scrolling to it. Verified: with all six
+  of `Sample.md`'s headings folded, a word that exists only in the footnotes
+  still returns `{count: 1}` and comes into view.
+- **A link into a folded section**, both kinds: `scrollToAnchor` for the
+  cross-file hop, and a click on an in-page `#` link, which is answered before
+  WebKit's own scroll runs.
+
+`apply` also fires an `outlinechange` event on `#doc`, which is what re-measures
+the scrollbar lanes: a block that was hidden has never been measured, and making
+that every caller's job is how it would come to be forgotten.
+
+## Testing anything that needs a click
+
+The snapshot tool renders one document and shoots it; it cannot click. **A
+`<script src="…">` added to a copy of the page will not run** — the CSP's
+`script-src 'self'` does not admit a second file on a `file://` origin, and the
+failure is silent: the page renders perfectly and the test simply does nothing.
+That cost a debugging round.
+
+What works is appending the test to the *copy's* `preview.js`, which is already
+trusted, and driving the page from a `MutationObserver` on `#doc` — the render
+arrives long after the script does. Report by prepending a paragraph to the
+document: it lands in the PNG, which is the only channel out of there.
+
+```js
+;(function(){
+  let done = false
+  new MutationObserver(() => {
+    if (done) return
+    const h = document.querySelector('#doc h2'); if (!h) return
+    done = true                       // the report is itself a mutation
+    h.click()
+    const p = document.createElement('p')
+    p.textContent = `DIAG hidden=${[...document.getElementById('doc').children].filter(x => x.hidden).length}`
+    document.getElementById('doc').prepend(p)
+  }).observe(document.getElementById('doc'), { childList: true })
+})();
+```
+
+⌥-click and the rest of the modifiers arrive through
+`new MouseEvent('click', { bubbles: true, altKey: true })`, so the whole
+interaction is reachable from there.
+
 ## Margins never collapse inside `#doc`
 
 `#doc` is a grid, and grid items' margins do not collapse. Every vertical gap
@@ -367,6 +433,16 @@ without a probe, though the descriptors lag a closed tab by a few seconds. And
 Beware `: > log` while the process holds the file open: the offset survives, so
 grep sees a binary hole and prints nothing.
 
+Installing over the running app is a quit, not a copy: WebKit reads `index.html`
+out of the bundle every time a tab is made, so a swapped bundle under a live
+process is a tab that fails to load. Quit it first, and know that Context has no
+save prompt — an unsaved edit in its own editor pane dies with it.
+
+```sh
+osascript -e 'tell application "Context" to quit'
+rm -rf /Applications/Context.app && ditto build/Context.app /Applications/Context.app
+open -a /Applications/Context.app
+```
 
 ## Why the panes never branch on `editorVisible`
 

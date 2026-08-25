@@ -4,6 +4,9 @@ Context renders a document the way a book would set it: one column, a fixed
 measure, and type that stays out of the way. The editor is a guest — press
 `⌘E` when you need it, dismiss it when you don't.
 
+Every heading folds: click this one to put the whole document away, or ⌥-click
+it to collapse the file to its outline and click again to open it.
+
 ## Why measure matters
 
 Line length is the single largest lever on reading comfort. Much past seventy

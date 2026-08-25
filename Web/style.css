@@ -201,6 +201,46 @@ h1, h2, h3, h4, h5, h6 {
 
 h1 { font-size: 2.05em; letter-spacing: -0.028em; margin-top: 0; }
 
+/* ── Folding ─────────────────────────────────────────────────────────────
+   A heading owns everything under it down to the next heading of its own level
+   or higher, and clicking it folds that away; ⌥-click does the whole document.
+   `Web/outline.js` decides what is hidden and marks the headings — this only
+   draws the marker and takes the hidden rows out of the grid.
+
+   The marker is a pseudo-element rather than a button: it lives out in the
+   gutter, where a real element would have to be positioned anyway, and the
+   click is answered by the heading it belongs to. It is sized in the heading's
+   own em, so it grows with the level it marks, and it stays out of sight until
+   the pointer is on the heading — a page of triangles is not a page. */
+
+#doc > [hidden] { display: none; }
+
+#doc :is(h1, h2, h3, h4, h5, h6) { position: relative; }
+
+#doc :is(h1, h2, h3, h4, h5, h6)::before {
+  content: '';
+  position: absolute;
+  left: -0.82em;
+  /* Centred on the first line: half of line-height, less half the triangle. */
+  top: calc(0.61em - 0.19em);
+  border-top: 0.19em solid transparent;
+  border-bottom: 0.19em solid transparent;
+  border-left: 0.3em solid var(--faint);
+  opacity: 0;
+  /* Pointing down while the section is open, right while it is shut. */
+  transform: rotate(90deg);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+#doc :is(h1, h2, h3, h4, h5, h6):hover::before { opacity: 0.5; }
+
+#doc :is(h1, h2, h3, h4, h5, h6).folded::before {
+  opacity: 0.8;
+  transform: rotate(0deg);
+}
+
+/* Nothing under it to fold, so nothing to offer. */
+#doc :is(h1, h2, h3, h4, h5, h6).bare::before { content: none; }
 h2 { font-size: 1.5em; }
 h3 { font-size: 1.2em; }
 h4 { font-size: 1.02em; }

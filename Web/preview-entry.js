@@ -37,6 +37,7 @@ import xml from 'highlight.js/lib/languages/xml'
 import yaml from 'highlight.js/lib/languages/yaml'
 
 import * as finder from './find.js'
+import * as outline from './outline.js'
 
 // Registered explicitly rather than pulling highlight.js's "common" bundle:
 // this list is the one that ships, and it costs about a tenth of the full set.
@@ -222,6 +223,61 @@ new ResizeObserver(entries => {
 }).observe(doc())
 document.fonts?.addEventListener('loadingdone', () => markScrollers(doc()))
 
+// Folding changes what is on the page, and a block revealed by it has never
+// been measured. `outline.apply` says so rather than every caller remembering.
+doc().addEventListener('outlinechange', () => markScrollers(doc()))
+
+/**
+ * The id an in-page link points at.
+ *
+ * `decodeURIComponent` throws on a malformed escape, and a document is written
+ * by somebody else — a link nobody can follow must not be a click that stops
+ * working.
+ *
+ * @param {HTMLAnchorElement} link - A link with a fragment.
+ * @returns {string} The fragment, decoded where it can be.
+ */
+function fragmentOf(link) {
+  const raw = link.hash.slice(1)
+  try {
+    return decodeURIComponent(raw)
+  } catch (_) {
+    return raw
+  }
+}
+
+/**
+ * Folds a heading that has been clicked, or opens the way to a link's target.
+ *
+ * One listener on the document, so it survives every render — the elements it
+ * acts on do not. Clicking the heading itself rather than only its marker is
+ * the larger target and the one people try first; the marker is there to say
+ * that the target exists.
+ *
+ * @param {MouseEvent} event - The click.
+ */
+function onClick(event) {
+  // A link is never a fold, even inside a heading. An in-page one is answered
+  // here first: WebKit scrolls it itself, but it cannot scroll to something
+  // that is not on the page, and this runs before the navigation.
+  const link = event.target.closest('a')
+  if (link) {
+    const target = link.hash && document.getElementById(fragmentOf(link))
+    if (target) outline.reveal(target)
+    return
+  }
+
+  const heading = event.target.closest('h1, h2, h3, h4, h5, h6')
+  if (!heading || heading.parentElement !== doc() || !heading.id) return
+  // A drag that selected the heading's text ends in a click too, and folding
+  // the section out from under a selection is never what was meant.
+  if (!window.getSelection().isCollapsed) return
+  if (heading.classList.contains('bare')) return
+
+  outline.toggle(heading, event.altKey)
+}
+
+doc().addEventListener('click', onClick)
 
 /** The surface the Swift side drives. Nothing else is exported. */
 window.Context = {
@@ -248,6 +304,11 @@ window.Context = {
     wrapTables(el)
     addHeadingIds(el)
     localizeURLs(el)
+    // Folds belong to the document that was open: keep them across a re-render
+    // of the same file — a save, or a reload from the watcher — and drop them
+    // when a different one arrives, on the same test the scroll position uses.
+    if (!keepScroll) outline.reset()
+    outline.apply(el)
     document.body.classList.toggle('empty', src.trim() === '')
     // After the empty state, not before: an empty document hides #doc, and
     // nothing inside something display:none can be measured.
@@ -269,6 +330,9 @@ window.Context = {
   scrollToAnchor(b64) {
     const target = document.getElementById(decodeBase64Utf8(b64))
     if (!target) return false
+    // A link from another file can land inside a folded section — the fold
+    // belongs to the reader, but not so far as to swallow where they asked to go.
+    outline.reveal(target)
     // block:'start' honours scroll-margin-top, so this lands with the same air
     // above it as WebKit's own scroll for an in-page link.
     target.scrollIntoView({ block: 'start', behavior: 'auto' })

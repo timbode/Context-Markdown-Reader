@@ -5,6 +5,8 @@
 // grid layout, the KaTeX boxes and the highlight.js token spans stay exactly as
 // they were rendered.
 
+import * as outline from './outline.js'
+
 /**
  * Elements whose text is in the DOM but never on the page.
  *
@@ -204,6 +206,9 @@ function paint() {
  */
 function reveal() {
   if (state.index < 0) return
+  // A fold hides the page, not the document: a match can be found inside a
+  // folded section, and showing it means opening the way in first.
+  outline.reveal(state.ranges[state.index].startContainer)
   const rect = state.ranges[state.index].getBoundingClientRect()
   const top = window.scrollY + rect.top - (window.innerHeight - rect.height) / 2
   window.scrollTo({ top: Math.max(0, top), behavior: 'auto' })
